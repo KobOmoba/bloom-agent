@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>AariNAT Agent Pro · Final</title>
+  <style>
+    :root {
+      --brand: #4f46e5;
+      --brand-dark: #3730a3;
+      --money: #10b981;
+      --danger: #ef4444;
+      --danger-light: #fef2f2;
+      --surface: #ffffff;
+      --bg: #f1f5f9;
+      --text: #0f172a;
+      --sub: #64748b;
+      --border: #e2e8f0;
+      --radius: 16px;
+      --shadow: 0 4px 12px rgba(0,0,0,0.04);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 80px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .header {
+      background: var(--text);
+      color: white;
+      padding: 1.5rem 1.25rem;
+      border-bottom: 4px solid var(--brand);
+    }
+    .header .vision {
+      font-size: 0.65rem;
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      color: var(--money);
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+    .header h1 { font-size: 1.4rem; font-weight: 800; }
+    .container { padding: 1rem; max-width: 480px; margin: 0 auto; }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    h3 { font-size: 1rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+
+    label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--sub);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="tel"] {
+      width: 100%;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      background: #fafbfc;
+      transition: border 0.2s;
+    }
+    input:focus { border-color: var(--brand); outline: none; }
+
+    .slider-container {
+      margin-bottom: 1.25rem;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--danger);
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--danger);
+    }
+    #gap-display {
+      font-weight: 800;
+      font-size: 0.9rem;
+      color: var(--danger);
+    }
+
+    .audit-box {
+      background: var(--danger-light);
+      border: 1.5px dashed var(--danger);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .leakage-amt {
+      font-size: 1.8rem;
+      font-weight: 900;
+      color: var(--danger);
+      margin: 0.25rem 0;
+    }
+    .recovery-range {
+      font-size: 0.85rem;
+      color: #b91c1c;
+      font-weight: 600;
+    }
+    .recovery-range strong {
+      color: var(--danger);
+      font-weight: 800;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 0.9rem;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      text-align: center;
+      margin-top: 0.75rem;
+    }
+    .btn-primary { background: var(--brand); color: white; }
+    .btn-primary:active { background: var(--brand-dark); }
+    .btn-success { background: var(--money); color: white; }
+    .btn-outline { background: transparent; border: 1.5px solid var(--brand); color: var(--brand); }
+    .btn-copy { background: #64748b; color: white; margin-top: 0.5rem; }
+
+    .tier-result {
+      display: none;
+      background: #f0fdf4;
+      border: 1.5px solid var(--money);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-top: 1rem;
+      text-align: center;
+    }
+    .tier-name {
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--text);
+    }
+    .price-options {
+      margin: 0.5rem 0;
+    }
+    .price-options small {
+      font-size: 0.75rem;
+      color: var(--sub);
+    }
+    .price-standard {
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .price-promo {
+      font-weight: 900;
+      font-size: 1.6rem;
+      color: var(--text);
+    }
+    .discount-note {
+      font-size: 0.75rem;
+      color: #166534;
+      background: #dcfce7;
+      padding: 0.4rem;
+      border-radius: 8px;
+      margin: 0.5rem 0;
+    }
+
+    .warning {
+      font-size: 0.75rem;
+      color: #b45309;
+      background: #fffbeb;
+      padding: 0.6rem;
+      border-radius: 8px;
+      margin-top: 0.75rem;
+    }
+
+    /* Agent Setup Overlay (V3 style) */
+    #agentSetupOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      z-index: 1000;
+      display: none;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 2rem;
+    }
+    #agentSetupOverlay .card {
+      margin-top: 20%;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .reset-agent {
+      font-size: 0.75rem;
+      color: var(--sub);
+      text-align: right;
+      margin-top: 0.5rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--sub);
+      margin-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Full‑screen Agent Setup (only if no saved identity) -->
+<div id="agentSetupOverlay">
+  <div class="card">
+    <h3>👤 Agent Identity</h3>
+    <label>Your full name</label>
+    <input type="text" id="setupAgentName" placeholder="e.g. Grace Okonkwo">
+    <label>Your WhatsApp (234...)</label>
+    <input type="tel" id="setupAgentPhone" placeholder="2348012345678">
+    <button class="btn btn-primary" onclick="saveAgent()">Start Operations</button>
+    <div class="footer-note">This helps us track your commissions accurately.</div>
+  </div>
+</div>
+
+<div class="header">
+  <div class="vision">Revenue Recovery Division</div>
+  <h1>AariNAT Agent</h1>
+  <div id="agentGreeting" style="font-size:0.85rem; margin-top:0.25rem; opacity:0.8;"></div>
+</div>
+
+<div class="container">
+  <!-- Fee Leakage Auditor -->
+  <div class="card" id="auditorCard">
+    <h3>💰 Fee Leakage Auditor</h3>
+    <label>Average Termly Fee (₦)</label>
+    <input type="number" id="feeVal" value="45000" oninput="refreshLeakage()">
+
+    <label>Estimated Collection Gap (%)</label>
+    <div class="slider-container">
+      <input type="range" id="gapRange" min="5" max="50" value="15" oninput="refreshLeakage()">
+      <div class="slider-labels">
+        <span>5%</span>
+        <span id="gapDisplay">15%</span>
+        <span>50%</span>
+      </div>
+    </div>
+
+    <div class="audit-box">
+      <div style="font-size:0.7rem; font-weight:700; color:#991b1b;">EST. ANNUAL FEE LEAKAGE</div>
+      <div class="leakage-amt" id="leakageDisplay">Enter student count</div>
+      <div class="recovery-range">
+        Recoverable: <strong id="recoveryDisplay">—</strong>
+      </div>
+      <div style="font-size:0.65rem; color:#7f1d1d; margin-top:0.25rem;">Based on similar schools (70–90% recovery)</div>
+    </div>
+
+    <label style="margin-top:1rem;">Student Count (if no register)</label>
+    <input type="number" id="manualCount" placeholder="Optional: enter manually" oninput="refreshLeakage()">
+    <div class="warning" style="margin-top:0.25rem;">
+      ⚠️ For a precise audit, upload a CSV register below.
+    </div>
+  </div>
+
+  <!-- School Onboarding -->
+  <div class="card" id="onboardingCard">
+    <h3>🚀 School Onboarding</h3>
+    <input type="text" id="schName" placeholder="School Name">
+    <input type="tel" id="schPhone" placeholder="Principal WhatsApp (e.g. 234...)">
+
+    <label>Upload Register (CSV)</label>
+    <input type="file" id="csvFile" accept=".csv" style="display:none" onchange="handleCSV(this.files[0])">
+    <button class="btn btn-outline" onclick="document.getElementById('csvFile').click()">📁 Analyze Register</button>
+
+    <div id="csvFeedback" style="font-size:0.8rem; margin-top:0.5rem; color: var(--sub);"></div>
+
+    <div class="tier-result" id="tierResult">
+      <div style="font-weight:700; color:#166534; font-size:0.7rem;">OFFICIAL QUOTE</div>
+      <div class="tier-name" id="tierName">—</div>
+      <div class="price-options">
+        <div>
+          <small>1 Term:</small>
+          <span class="price-standard" id="priceStandard">₦0</span>
+        </div>
+        <div style="margin-top:0.25rem;">
+          <small style="color:var(--money);">2+ Terms Upfront:</small>
+          <span class="price-promo" id="pricePromo">₦0</span>
+        </div>
+      </div>
+      <div class="discount-note">
+        💡 Pay 2+ terms upfront → 50% off the first term
+      </div>
+      <button class="btn btn-success" onclick="sendInvoiceWhatsApp()">📲 Send Recovery Invoice</button>
+      <button class="btn btn-copy" onclick="copyInvoiceToClipboard()">📋 Copy Message (Offline)</button>
+    </div>
+  </div>
+
+  <div class="reset-agent" onclick="resetAgent()">🔄 Change Agent Details</div>
+</div>
+
+<script>
+  // ---- CORRECT ORIGINAL PRICING TIERS (Student‑Based) ----
+  const V2_TIERS = [
+    { min: 1, max: 50, price: 10000, name: "Small School" },
+    { min: 51, max: 100, price: 20000, name: "Medium School" },
+    { min: 101, max: 200, price: 35000, name: "Large School" },
+    { min: 201, max: 350, price: 55000, name: "Mega School" },
+    { min: 351, max: 999999, price: 75000, name: "Ultra School" }
+  ];
+
+  let appState = {
+    studentCount: 0,
+    tier: null,
+    manualOverride: false
+  };
+
+  // ---- AGENT LOCAL STORAGE ----
+  function getAgent() {
+    return {
+      name: localStorage.getItem('agentName') || '',
+      phone: localStorage.getItem('agentPhone') || ''
+    };
+  }
+
+  function saveAgent() {
+    const name = document.getElementById('setupAgentName').value.trim();
+    const phone = document.getElementById('setupAgentPhone').value.trim();
+    if (!name || !phone) {
+      alert("Please fill both fields.");
+      return;
+    }
+    localStorage.setItem('agentName', name);
+    localStorage.setItem('agentPhone', phone);
+    document.getElementById('agentSetupOverlay').style.display = 'none';
+    updateAgentGreeting();
+  }
+
+  function resetAgent() {
+    localStorage.removeItem('agentName');
+    localStorage.removeItem('agentPhone');
+    document.getElementById('agentSetupOverlay').style.display = 'flex';
+    document.getElementById('agentGreeting').textContent = '';
+    document.getElementById('setupAgentName').value = '';
+    document.getElementById('setupAgentPhone').value = '';
+  }
+
+  function updateAgentGreeting() {
+    const agent = getAgent();
+    if (agent.name) {
+      document.getElementById('agentGreeting').textContent = `Agent: ${agent.name}`;
+      document.getElementById('agentSetupOverlay').style.display = 'none';
+    } else {
+      document.getElementById('agentSetupOverlay').style.display = 'flex';
+    }
+  }
+
+  // ---- LEAKAGE CALCULATOR ----
+  function getEffectiveStudentCount() {
+    const manual = parseInt(document.getElementById('manualCount').value);
+    if (!isNaN(manual) && manual > 0) {
+      appState.manualOverride = true;
+      return manual;
+    }
+    appState.manualOverride = false;
+    return appState.studentCount || 0;
+  }
+
+  function refreshLeakage() {
+    const count = getEffectiveStudentCount();
+    const fee = parseFloat(document.getElementById('feeVal').value) || 0;
+    const gapPercent = parseInt(document.getElementById('gapRange').value) || 15;
+
+    document.getElementById('gapDisplay').textContent = gapPercent + '%';
+
+    if (count === 0) {
+      document.getElementById('leakageDisplay').textContent = 'Enter student count';
+      document.getElementById('recoveryDisplay').textContent = '—';
+      return;
+    }
+
+    const annualPotential = count * fee * 3; // 3 terms (Nigerian school year)
+    const loss = annualPotential * (gapPercent / 100);
+    const recoveryLow = Math.round(loss * 0.70).toLocaleString();
+    const recoveryHigh = Math.round(loss * 0.90).toLocaleString();
+
+    document.getElementById('leakageDisplay').textContent = `₦${Math.round(loss).toLocaleString()}`;
+    document.getElementById('recoveryDisplay').textContent = `₦${recoveryLow} – ₦${recoveryHigh}`;
+
+    detectTier(count);
+  }
+
+  function detectTier(count) {
+    const tier = V2_TIERS.find(t => count >= t.min && count <= t.max) || V2_TIERS[V2_TIERS.length-1];
+    appState.tier = tier;
+    document.getElementById('tierResult').style.display = 'block';
+    document.getElementById('tierName').textContent = tier.name.toUpperCase();
+    document.getElementById('priceStandard').textContent = `₦${tier.price.toLocaleString()}`;
+    document.getElementById('pricePromo').textContent = `₦${(tier.price * 1.5).toLocaleString()}`;
+  }
+
+  // ---- CSV HANDLING ----
+  function handleCSV(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      const dataLines = lines.length > 1 ? lines.length - 1 : 0;
+      appState.studentCount = dataLines;
+      document.getElementById('csvFeedback').textContent = `📄 Detected ${dataLines} student records.`;
+      document.getElementById('manualCount').value = '';
+      appState.manualOverride = false;
+      refreshLeakage();
+    };
+    reader.readAsText(file);
+  }
+
+  // ---- INVOICE MESSAGING ----
+  function buildInvoiceMessage() {
+    const agent = getAgent();
+    const school = document.getElementById('schName').value.trim();
+    const phone = document.getElementById('schPhone').value.trim();
+    if (!school || !phone) {
+      alert('Enter school name and principal WhatsApp first.');
+      return null;
+    }
+
+    const count = getEffectiveStudentCount();
+    const leakage = document.getElementById('leakageDisplay').textContent;
+    const recovery = document.getElementById('recoveryDisplay').textContent;
+    const tier = appState.tier;
+    if (!tier) {
+      alert('Determine student count and tier first.');
+      return null;
+    }
+
+    const standardPrice = tier.price.toLocaleString();
+    const promoTotal = (tier.price * 1.5).toLocaleString();
+
+    const msg =
+      `*AariNAT V2 RECOVERY INVOICE*%0A` +
+      `──────────────────────%0A` +
+      `*School:* ${school}%0A` +
+      `*Students:* ${count}%0A` +
+      `*Est. Annual Loss:* ${leakage}%0A` +
+      `*Recoverable:* ${recovery}%0A` +
+      `──────────────────────%0A` +
+      `*1 Term:* ₦${standardPrice}%0A` +
+      `*2+ Terms:* ₦${promoTotal}%0A` +
+      `_Save 50% on Term 1 when paying upfront._%0A` +
+      `──────────────────────%0A` +
+      `_We plug your fee leaks or you don’t pay._%0A` +
+      `_Start with a 14-day free trial._%0A` +
+      `%0A*Agent:* ${agent.name}%0A*Agent Contact:* wa.me/${agent.phone.replace(/\D/g,'')}`;
+
+    return msg;
+  }
+
+  function sendInvoiceWhatsApp() {
+    const msg = buildInvoiceMessage();
+    if (!msg) return;
+    const phone = document.getElementById('schPhone').value.replace(/\D/g,'');
+    window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+  }
+
+  function copyInvoiceToClipboard() {
+    const msg = buildInvoiceMessage();
+    if (!msg) return;
+    const plain = msg.replace(/%0A/g, '\n').replace(/\*/g, '');
+    navigator.clipboard.writeText(plain).then(() => {
+      alert('Invoice copied! Paste in WhatsApp or SMS.');
+    }).catch(() => {
+      prompt('Copy manually:', plain);
+    });
+  }
+
+  // ---- INITIALISATION ----
+  window.addEventListener('DOMContentLoaded', () => {
+    updateAgentGreeting();
+    refreshLeakage();
+  });
+</script>
+</body>
+</html>
