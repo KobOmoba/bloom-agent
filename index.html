@@ -329,7 +329,8 @@
   let appState = {
     studentCount: 0,
     tier: null,
-    manualOverride: false
+    manualOverride: false,
+    currentSchoolId: null
   };
 
   // ---- AGENT LOCAL STORAGE ----
@@ -414,6 +415,11 @@
     document.getElementById('tierName').textContent = tier.name.toUpperCase();
     document.getElementById('priceStandard').textContent = `₦${tier.price.toLocaleString()}`;
     document.getElementById('pricePromo').textContent = `₦${(tier.price * 1.5).toLocaleString()}`;
+    
+    // Generate a new School ID when tier is shown
+    if (!appState.currentSchoolId) {
+      appState.currentSchoolId = 'BLOOM-' + Date.now().toString(36).toUpperCase().slice(-6);
+    }
   }
 
   // ---- CSV HANDLING ----
@@ -428,6 +434,7 @@
       document.getElementById('csvFeedback').textContent = `📄 Detected ${dataLines} student records.`;
       document.getElementById('manualCount').value = '';
       appState.manualOverride = false;
+      appState.currentSchoolId = null; // reset to regenerate ID with new count
       refreshLeakage();
     };
     reader.readAsText(file);
@@ -466,6 +473,11 @@
       `*1 Term:* ₦${standardPrice}%0A` +
       `*2+ Terms:* ₦${promoTotal}%0A` +
       `_Save 50% on Term 1 when paying upfront._%0A` +
+      `──────────────────────%0A` +
+      `*YOUR PORTAL ACCESS*%0A` +
+      `School ID: *${appState.currentSchoolId}*%0A` +
+      `Portal: https://kobomoba.github.io/bloom-portal/%0A` +
+      `First-time password: *aarinat2024*%0A` +
       `──────────────────────%0A` +
       `_We plug your fee leaks or you don’t pay._%0A` +
       `_Start with a 14-day free trial._%0A` +
