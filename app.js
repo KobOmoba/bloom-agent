@@ -2,7 +2,6 @@
 const FB = { apiKey:"AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o", authDomain:"educationbloom-699ed.firebaseapp.com", projectId:"educationbloom-699ed", storageBucket:"educationbloom-699ed.firebasestorage.app", messagingSenderId:"33750392965", appId:"1:33750392965:web:2b3da887ede996ea8389ec" };
 let db = null;
 try { firebase.initializeApp(FB); db = firebase.firestore(); } catch(e){ console.warn('Firebase:',e); }
-
 // ── State ──────────────────────────────────────────────────────────────────
 let agent = null;    // { id, name, phone, commission }
 let selTier = null;  // { price, name, max }
@@ -13,13 +12,17 @@ const TIERS = [
   { price:55000, name:'Large (201–350)',   max:350 },
   { price:75000, name:'Enterprise (351+)', max:9999 },
 ];
-
 // ── Sync queue ─────────────────────────────────────────────────────────────
 const SQ = {
   q: JSON.parse(localStorage.getItem('ag_sq')||'[]'),
   save(){ localStorage.setItem('ag_sq', JSON.stringify(this.q)); },
   push(op){ this.q.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2), op, tries:0 }); this.save(); this.run(); },
-  ping(){ const ok=navigator.onLine&&!!db; const el=document.getElementById('sync'); if(el){ el.className='dot '+(ok?this.q.length?'dot-sync':'dot-on':'dot-off'); el.textContent=ok?this.q.length?'● Syncing':'● Online':'● Offline'; } if(ok&&this.q.length) this.run(); },
+  ping(){ 
+    const ok=navigator.onLine&&!!db; 
+    const el=document.getElementById('sync'); 
+    if(el){ el.className='dot '+(ok?this.q.length?'dot-sync':'dot-on':'dot-off'); el.textContent=ok?this.q.length?'● Syncing':'● Online':'● Offline'; } 
+    if(ok&&this.q.length) this.run(); 
+  },
   async run(){
     if(!db||!navigator.onLine||!this.q.length) return;
     const items=[...this.q];
@@ -33,48 +36,38 @@ const SQ = {
 };
 window.addEventListener('online', ()=>SQ.ping());
 window.addEventListener('offline', ()=>SQ.ping());
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 const esc = s => { if(!s)return''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; };
 const $ = id => document.getElementById(id);
 const fmt = n => '₦'+Number(n).toLocaleString('en-NG');
-
-// ── Login ──────────────────────────────────────────────────────────────────
+// ─ Login ──────────────────────────────────────────────────────────────────
 function setTab(mode){
   $('phone-form').style.display = mode==='phone' ? 'block' : 'none';
   $('register-form').style.display = mode==='register' ? 'block' : 'none';
   document.querySelectorAll('.ltab').forEach((t,i)=>t.classList.toggle('on',(i===0&&mode==='phone')||(i===1&&mode==='register')));
   $('login-err').style.display='none';
 }
-
-// Convert any Nigerian phone format to 234XXXXXXXXXX
-function normalizePhone(raw){
-  let p = raw.trim().replace(/\D/g,'');
+function normalizePhone(raw){  let p = raw.trim().replace(/\D/g,'');
   if(p.startsWith('0') && p.length === 11) return '234' + p.slice(1);
   if(p.startsWith('234') && p.length === 13) return p;
   if(p.length === 10) return '234' + p;
   return p;
 }
-
 async function doLogin(){
   const raw = $('l-phone').value.trim();
   const phone = normalizePhone(raw);
   const localFmt = phone.startsWith('234') ? '0' + phone.slice(3) : phone;
-
   if(phone.length < 10){
     showErr('Enter your WhatsApp number — e.g. 08038740131 or 2348038740131');
     return;
   }
   const btn=$('l-btn'); btn.textContent='Checking...'; btn.disabled=true;
-
   try {
-    // Search both formats — admin may have saved with or without country code
     const [snap1, snap2] = await Promise.all([
       db.collection('admin_agents').where('phone','==',phone).get(),
       db.collection('admin_agents').where('phone','==',localFmt).get()
     ]);
     const allDocs = [...snap1.docs, ...snap2.docs];
-
     if(!allDocs.length){
       showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 814 507 3941');
       btn.textContent='▶ Login'; btn.disabled=false; return;
@@ -96,25 +89,18 @@ async function doLogin(){
   }
   btn.textContent='▶ Login'; btn.disabled=false;
 }
-
 async function doRegister(){
-  // Self-registration is not allowed — agents must be added by admin
   showErr("You can't self-register. AariNAT must add you. Call +234 814 507 3941");
 }
-
 function showErr(msg){ const e=$('login-err'); e.textContent=msg; e.style.display='block'; }
-
 function startApp(){
   $('login').style.display='none';
   $('app').style.display='block';
-  $('agent-name-hdr').textContent=agent.name;
-  SQ.ping();
+  $('agent-name-hdr').textContent=agent.name;  SQ.ping();
   go('submit');
 }
-
 function logout(){ if(!confirm('Logout?'))return; localStorage.removeItem('ag_agent'); location.reload(); }
-
-// ── Navigation ─────────────────────────────────────────────────────────────
+// ─ Navigation ─────────────────────────────────────────────────────────────
 function go(tab){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.nlink').forEach(b=>b.classList.remove('on'));
@@ -124,15 +110,13 @@ function go(tab){
   if(tab==='deals') renderDeals();
   if(tab==='earnings') renderEarnings();
 }
-
-// ── Submit Deal ────────────────────────────────────────────────────────────
+// ─ Submit Deal ────────────────────────────────────────────────────────────
 function selectTier(el, price, name, max){
   document.querySelectorAll('.tier').forEach(t=>t.classList.remove('sel'));
   el.classList.add('sel');
   selTier={price,name,max};
   updateCommission();
 }
-
 function autoTier(){
   const n=parseInt($('s-count').value)||0;
   if(!n)return;
@@ -143,7 +127,6 @@ function autoTier(){
   selTier=t;
   updateCommission();
 }
-
 function updateCommission(){
   if(!selTier)return;
   const terms=parseInt($('s-terms').value)||1;
@@ -154,6 +137,7 @@ function updateCommission(){
   $('comm-total').textContent=`Total school pays: ${fmt(total)} for ${terms} term${terms>1?'s':''}`;
 }
 
+// 🔧 PATCHED: Robust submission handler with try/catch/finally & offline fallback
 async function submitDeal(){
   const name=$('s-name').value.trim();
   const phone=$('s-phone').value.trim().replace(/\D/g,'');
@@ -161,14 +145,17 @@ async function submitDeal(){
   const count=parseInt($('s-count').value)||0;
   const terms=parseInt($('s-terms').value)||1;
   const notes=$('s-notes').value.trim();
-  const fb=$('submit-fb');
-
+  const fb=$('submit-fb');  
   if(!name){ showFB(fb,'bad','Enter the school name.'); return; }
   if(!phone||phone.length<10){ showFB(fb,'bad','Enter principal\'s WhatsApp (e.g. 2348012345678).'); return; }
   if(!count||count<1){ showFB(fb,'bad','Enter approximate number of students.'); return; }
   if(!selTier){ showFB(fb,'bad','Select a pricing tier.'); return; }
+  
+  const btn=$('submit-btn'); 
+  btn.textContent='Submitting...'; 
+  btn.disabled=true;
+  btn.style.opacity='0.7';
 
-  const btn=$('submit-btn'); btn.textContent='Submitting...'; btn.disabled=true;
   const deal={
     timestamp:new Date(), status:'pending',
     agent:{ id:agent.id, name:agent.name, phone:agent.phone, commission:agent.commission||20 },
@@ -178,27 +165,46 @@ async function submitDeal(){
   };
 
   try{
-    if(db&&navigator.onLine){ await db.collection('admin_deals').add(deal); }
-    else{ SQ.push({t:'deal',d:deal}); }
-    showFB(fb,'ok',`✅ "${name}" submitted! Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
-    // Reset form
+    if(!navigator.onLine) throw new Error('No internet connection.');
+    if(!db) throw new Error('Database not initialized. Refresh page.');
+    
+    await db.collection('admin_deals').add(deal);
+    
+    showFB(fb,'ok',`✅ "${name}" submitted! Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100)))} on approval.`);
     ['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
     $('s-terms').value='1';
     document.querySelectorAll('.tier').forEach(t=>t.classList.remove('sel'));
     selTier=null; $('comm-box').style.display='none';
-  }catch(e){ showFB(fb,'bad','Submission failed. Check connection.'); }
-  btn.textContent='📤 Submit to Bayo'; btn.disabled=false;
+    
+  } catch(e){
+    console.error('Submit Error:', e);
+    // Fallback to offline queue if network/firebase fails
+    if(e.message?.includes('internet') || e.code==='unavailable' || e.code==='permission-denied'){
+      SQ.push({t:'deal',d:deal});
+      showFB(fb,'ok', '⚠️ Submission queued offline. Will sync when connection restores.');
+    } else {
+      showFB(fb,'bad', `❌ Failed: ${e.message || 'Check connection & retry.'}`);
+    }
+  } finally {
+    // ALWAYS reset button state — prevents frozen UI
+    btn.textContent='📤 Submit to Bayo';
+    btn.disabled=false;
+    btn.style.opacity='1';
+  }
 }
+// ───────────────────────────────────────────────────────────────────────────
 
-function showFB(el,type,msg){ el.className=`feedback ${type}`; el.textContent=msg; el.style.display='block'; }
-
-// ── My Deals ───────────────────────────────────────────────────────────────
+function showFB(el,type,msg){ el.className=`feedback ${type}`; el.textContent=msg; el.style.display='block'; }// ── My Deals ───────────────────────────────────────────────────────────────
 async function renderDeals(){
   const c=$('deals-list'); c.innerHTML='<p style="text-align:center;color:var(--sub);padding:2rem;">Loading...</p>';
   try{
     const snap=await db.collection('admin_deals').where('agent.phone','==',agent.phone).get();
     const deals=snap.docs.map(d=>({id:d.id,...d.data()}));
-    deals.sort((a,b)=>{ const ta=a.timestamp?.toDate?a.timestamp.toDate():new Date(a.timestamp||0); const tb=b.timestamp?.toDate?b.timestamp.toDate():new Date(b.timestamp||0); return tb-ta; });
+    deals.sort((a,b)=>{
+      const ta=a.timestamp?.toDate?a.timestamp.toDate():new Date(a.timestamp||0);
+      const tb=b.timestamp?.toDate?b.timestamp.toDate():new Date(b.timestamp||0);
+      return tb-ta;
+    });
     if(!deals.length){ c.innerHTML='<p style="text-align:center;color:var(--sub);padding:2rem;">No deals yet. Submit your first school!</p>'; return; }
     c.innerHTML=deals.map(d=>{
       const chipCls={pending:'chip-p',approved:'chip-a',rejected:'chip-r'}[d.status||'pending'];
@@ -215,12 +221,10 @@ async function renderDeals(){
     }).join('');
   }catch(e){ c.innerHTML='<p style="color:var(--danger);padding:1rem;">Failed to load. Check connection.</p>'; }
 }
-
 function resendOnboarding(phone, schoolName, schoolId){
   const msg=`Hi! I'm your Educational Bloom agent.\n\nYour school "${schoolName}" has been activated! 🎉\n\n*School ID:* ${schoolId}\n\nLog in at: https://kobomoba.github.io/bloom-portal/\n\nI'll guide you through the setup. Call me anytime! 📞\n– ${agent.name}`;
   window.open(`https://wa.me/${phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
 }
-
 // ── Earnings ───────────────────────────────────────────────────────────────
 async function renderEarnings(){
   try{
@@ -235,19 +239,17 @@ async function renderEarnings(){
     tbody.innerHTML=entries.length===0?'<tr><td colspan="4" style="text-align:center;color:var(--sub);padding:2rem;">No earnings yet.</td></tr>':entries.map(e=>{
       const dt=e.date?.toDate?e.date.toDate():new Date();
       const paidCls=e.paid?'chip-a':'chip-p';
-      return `<tr><td>${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td><td style="font-size:0.75rem;">${e.schoolId||'—'}</td><td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td><td><span class="chip ${paidCls}" style="position:static;">${e.paid?'Paid':'Pending'}</span></td></tr>`;
+      return `<tr>
+        <td>${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td>
+        <td style="font-size:0.75rem;">${e.schoolId||'—'}</td>
+        <td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td>
+        <td><span class="chip ${paidCls}" style="position:static;">${e.paid?'Paid':'Pending'}</span></td>      </tr>`;
     }).join('');
   }catch(e){ console.warn('Earnings:',e); }
 }
-
-
-// ── Smart Register Counter ─────────────────────────────────────────────────
-// Accepts: CSV, TXT (WhatsApp lists), JPG/PNG photos of paper registers
-// Photos: OCR via Tesseract.js loaded on demand — free, no API key needed
-
+// ── Smart Register Counter ────────────────────────────────────────────────
 let csvStudentCount = 0;
 let csvParsedNames  = [];
-
 const TIERS_LIST = [
   {max:50,  price:10000, name:'Starter (1-50 students)'},
   {max:100, price:20000, name:'Small (51-100 students)'},
@@ -255,52 +257,25 @@ const TIERS_LIST = [
   {max:350, price:55000, name:'Large (201-350 students)'},
   {max:9999,price:75000, name:'Enterprise (351+ students)'}
 ];
-
-// Strip prefix titles and list markers, return cleaned name or false
 function cleanName(raw) {
-  // Strip leading numbering: "1.", "22.", "10.", "•", "-", "(1)"
-  let s = raw.replace(/^[\s]*\d+[\.\)\s]+/, '').trim();
-  s = s.replace(/^[\s\u2022\-\*]+/, '').trim();
-
-  // Strip Nigerian title prefixes — keep everything after the last "." in prefix
-  // Handles: Hon/Snr/Evang. | Sp/Ven/Evang. | MC. | C/E/B. | L/S/S/E/S. | M/C | C/P | S/P/S
-  s = s.replace(/^((?:[A-Z][a-zA-Z]*\/)*[A-Z][a-zA-Z]*\.\s*)+/g, '').trim();
-  // Also strip standalone abbreviation prefixes before the real name
-  s = s.replace(/^(M\/C|MC|C\/P|S\/P\/S|C\/E\/B|L\/S\/[A-Z\/]+)\s+/i, '').trim();
-
+  let s = raw.replace(/^[\s]*\d+[.)\s]+/, '').trim();
+  s = s.replace(/^[\s\u2022-*]+/, '').trim();
+  s = s.replace(/^((?:[A-Z][a-zA-Z]/)[A-Z][a-zA-Z].\s)+/g, '').trim();
+  s = s.replace(/^(M/C|MC|C/P|S/P/S|C/E/B|L/S/[A-Z/]+)\s+/i, '').trim();
   if (!s || s.length < 3) return null;
-
   const letters = s.replace(/[^a-zA-Z\s]/g, '').trim();
   if (letters.length < 3) return null;
-
-  // Reject if too many special/garbage chars (OCR noise)
   const specialRatio = s.replace(/[a-zA-Z\s]/g, '').length / s.length;
   if (specialRatio > 0.35) return null;
-
-  // Reject obvious non-names
-  if (/^(general|members|list|students|class|section|total|name|s\/n|serial|no\.|page|date|school|am|pm|\d{1,2}:\d{2})/i.test(letters.trim())) return null;
-
-  // Must be mostly letters
+  if (/^(general|members|list|students|class|section|total|name|s/n|serial|no.|page|date|school|am|pm|\d{1,2}:\d{2})/i.test(letters.trim())) return null;
   const letterRatio = letters.length / Math.max(s.length, 1);
   if (letterRatio < 0.55) return null;
-
-  // Must look like a name: at least one word with 2+ letters
   const words = s.split(/\s+/).filter(w => /[a-zA-Z]{2,}/.test(w));
   if (words.length < 1) return null;
-
   return s;
 }
-
-// Check if a line STARTS a new numbered entry (has leading number)
-function isNumberedLine(line) {
-  return /^\s*\d+[\.\)\s]/.test(line);
-}
-
-// Check if a line is a bullet/dash entry
-function isBulletLine(line) {
-  return /^\s*[\u2022\-\*]\s/.test(line);
-}
-
+function isNumberedLine(line) { return /^\s*\d+[.)\s]/.test(line); }
+function isBulletLine(line) { return /^\s*[\u2022-*]\s/.test(line); }
 function showLoading(msg) {
   const box = document.getElementById('csv-count-result');
   const ld  = document.getElementById('csv-loading');
@@ -310,16 +285,14 @@ function showLoading(msg) {
   document.getElementById('csv-name-preview').innerHTML = '';
   document.getElementById('csv-class-breakdown').innerHTML = '';
 }
-
 function renderCountResult(names) {
-  const unique = [...new Set(names.map(n=>n.trim()).filter(n=>n.length>1))];
+  const unique = [...new Set(names.map(n=>n.trim()).filter(n=>n.length >1))];
   document.getElementById('csv-loading').style.display = 'none';
   if (!unique.length) {
     document.getElementById('csv-count-result').style.display = 'none';
     alert('No student names found.\n\nFor photos: ensure the image is clear and well-lit.\nFor CSV/text: one name per line.');
     return;
-  }
-  csvStudentCount = unique.length;
+  }  csvStudentCount = unique.length;
   csvParsedNames  = unique.map(name => ({ name, class: null }));
   const tier = TIERS_LIST.find(t => csvStudentCount <= t.max) || TIERS_LIST[4];
   const comm = Math.round(tier.price * 0.20);
@@ -336,7 +309,6 @@ function renderCountResult(names) {
   document.getElementById('csv-class-breakdown').innerHTML = '';
   document.getElementById('csv-count-result').style.display = 'block';
 }
-
 function handleRegisterCSV(e) {
   const file = e.target.files[0]; if (!file) return;
   const name = (file.name || '').toLowerCase();
@@ -350,64 +322,45 @@ function handleRegisterCSV(e) {
   }
   e.target.value = '';
 }
-
-// Core extraction: joins continuation lines, handles CSV and plain text
-// A "continuation line" is a line that does NOT start with a number or bullet
-// — meaning it is the second line of a wrapped name like "Abiodun\nKogbodoku"
 function extractNamesFromText(raw) {
   const rawLines = raw.split(/\r?\n/);
   const names = [];
-
-  // Step 1: join continuation lines with the previous numbered/bulleted line
   const joined = [];
   let current = null;
-
   rawLines.forEach(line => {
     const t = line.trim();
     if (!t) {
-      // blank line ends current entry
       if (current !== null) { joined.push(current); current = null; }
       return;
     }
-    // Is this a CSV line? (contains comma — treat each col0 independently)
     if (t.includes(',') && !isNumberedLine(t) && !isBulletLine(t)) {
       if (current !== null) { joined.push(current); current = null; }
       joined.push(t.split(',')[0].replace(/"/g,'').trim());
       return;
     }
     if (isNumberedLine(t) || isBulletLine(t)) {
-      // New numbered entry — save previous
       if (current !== null) joined.push(current);
       current = t;
-    } else {
-      if (current !== null) {
-        // Continuation of previous — append if it looks like more of a name
-        // Only join if continuation line has no numbers and looks like word(s)
+    } else {      if (current !== null) {
         const words = t.replace(/[^a-zA-Z\s]/g,'').trim();
         if (words.length > 1 && t.length < 40) {
           current = current + ' ' + t;
         } else {
-          // Not a continuation — save current and start fresh
           joined.push(current);
           current = t;
         }
       } else {
-        // No current entry — treat as standalone line (plain list without numbers)
         current = t;
       }
     }
   });
   if (current !== null) joined.push(current);
-
-  // Step 2: clean each joined line and extract the name
   joined.forEach(line => {
     const cleaned = cleanName(line);
     if (cleaned) names.push(cleaned);
   });
-
   return names;
 }
-
 function readTextOrCSV(file) {
   const reader = new FileReader();
   reader.onload = ev => {
@@ -417,7 +370,6 @@ function readTextOrCSV(file) {
   reader.onerror = () => alert('Could not read file.');
   reader.readAsText(file);
 }
-
 function readImageWithOCR(file) {
   showLoading('📸 Reading photo... loading OCR engine (first time takes 30 seconds)');
   const loadTesseract = () => new Promise((resolve, reject) => {
@@ -438,8 +390,7 @@ function readImageWithOCR(file) {
             const ld = document.getElementById('csv-loading');
             if(ld) ld.textContent = '📸 Reading photo... ' + pct + '%';
           }
-        }
-      });
+        }      });
       const names = extractNamesFromText(text);
       renderCountResult(names);
     } catch(err) {
@@ -451,7 +402,6 @@ function readImageWithOCR(file) {
   reader.onerror = () => alert('Could not read image.');
   reader.readAsDataURL(file);
 }
-
 function useCSVCount() {
   if(!csvStudentCount) { alert('Upload a file first.'); return; }
   const countInput = document.getElementById('s-count');
@@ -461,16 +411,13 @@ function useCSVCount() {
   countInput.style.borderColor = '#10b981';
   setTimeout(() => { countInput.style.borderColor = ''; }, 2000);
 }
-
 function resetCSVCount() {
   csvStudentCount = 0;
   csvParsedNames  = [];
   document.getElementById('csv-count-result').style.display = 'none';
   document.getElementById('register-csv').value = '';
   document.getElementById('csv-name-preview').innerHTML = '';
-  // Don't clear the student count field — let agent decide if they want to keep it
 }
-
 // ── Startup ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
   SQ.ping();
