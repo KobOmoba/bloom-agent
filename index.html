@@ -37,21 +37,7 @@
       </a>
     </div>
     <div id="login-err" class="err-box"></div>
-    <div style="margin-top:1.25rem;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:0.9rem;font-size:0.78rem;color:#93c5fd;line-height:1.6;">
-      <strong style="color:#bfdbfe;">⚠️ If you get a permission error:</strong><br>
-      Go to <strong>Firebase Console → Firestore → Rules</strong> and replace the rules with:<br>
-      <code style="display:block;margin-top:0.5rem;background:rgba(0,0,0,0.3);padding:0.5rem;border-radius:6px;font-size:0.72rem;color:#e2e8f0;white-space:pre-wrap;">rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}</code>
-      <span style="font-size:0.7rem;color:#64748b;">Switch to stricter rules after testing.</span>
-    </div>
-  </div>
-</div>
+    
 
 <!-- APP -->
 <div id="app" style="display:none;">
