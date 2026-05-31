@@ -1,7 +1,21 @@
 // ── Firebase ───────────────────────────────────────────────────────────────
 const FB = { apiKey:"AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o", authDomain:"educationbloom-699ed.firebaseapp.com", projectId:"educationbloom-699ed", storageBucket:"educationbloom-699ed.firebasestorage.app", messagingSenderId:"33750392965", appId:"1:33750392965:web:2b3da887ede996ea8389ec" };
 let db = null;
-try { firebase.initializeApp(FB); db = firebase.firestore(); } catch(e){ console.warn('Firebase:',e); }
+try {
+  firebase.initializeApp(FB);
+  db = firebase.firestore();
+  // ✅ FIX: Enable offline persistence — Firestore caches all data locally.
+  // After an agent logs in once, the app works fully without internet.
+  db.enablePersistence({ synchronizeTabs: true })
+    .then(() => console.log('✅ Offline persistence enabled'))
+    .catch(err => {
+      // failed-precondition = multiple tabs open (one tab still works offline)
+      // unimplemented = very old browser — ignored gracefully
+      if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+        console.warn('Persistence error:', err.code);
+      }
+    });
+} catch(e){ console.warn('Firebase:',e); }
 
 // ── State ──────────────────────────────────────────────────────────────────
 let agent = null;    // { id, name, phone, commission }
@@ -39,7 +53,7 @@ const SQ = {
   },
   async exec(op){ if(op.t==='deal') await db.collection('admin_deals').add(op.d); }
 };
-window.addEventListener('online', ()=>SQ.ping());
+window.addEventListener('online', ()=>{ SQ.ping(); SQ.run(); });
 window.addEventListener('offline', ()=>SQ.ping());
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -74,6 +88,33 @@ async function doLogin(){
     return;
   }
   const btn=$('l-btn'); btn.textContent='Checking...'; btn.disabled=true;
+  $('login-err').style.display='none';
+
+  // ✅ Step 1: check localStorage cache first — works offline after first login
+  const cached = localStorage.getItem('ag_agent');
+  if(cached){
+    try{
+      const cachedAgent = JSON.parse(cached);
+      const cachedPhone = normalizePhone(cachedAgent.phone || '');
+      if(cachedPhone === phone || cachedAgent.phone === localFmt || cachedPhone === localFmt){
+        agent = cachedAgent;
+        // Silently refresh from Firestore in background if online
+        if(navigator.onLine && db){
+          refreshAgentBackground(cachedAgent.id, phone, localFmt).catch(()=>{});
+        }
+        startApp();
+        btn.textContent='▶ Login'; btn.disabled=false;
+        return;
+      }
+    }catch(e){ localStorage.removeItem('ag_agent'); }
+  }
+
+  // ✅ Step 2: first-time login — needs internet to find agent record in Firestore
+  if(!navigator.onLine || !db){
+    showErr('First login needs internet. Connect once — after that you can work offline anytime.');
+    btn.textContent='▶ Login'; btn.disabled=false;
+    return;
+  }
 
   try {
     // Search both formats — admin may have saved with or without country code
@@ -81,10 +122,14 @@ async function doLogin(){
       db.collection('admin_agents').where('phone','==',phone).get(),
       db.collection('admin_agents').where('phone','==',localFmt).get()
     ]);
-    const allDocs = [...snap1.docs, ...snap2.docs];
+    // Deduplicate by document ID
+    const seen = new Set();
+    const allDocs = [...snap1.docs, ...snap2.docs].filter(d=>{
+      if(seen.has(d.id)) return false; seen.add(d.id); return true;
+    });
 
     if(!allDocs.length){
-      showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 814 507 3941');
+      showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 816 543 8265');
       btn.textContent='▶ Login'; btn.disabled=false; return;
     }
     const doc = allDocs[0];
@@ -94,9 +139,9 @@ async function doLogin(){
   } catch(e){
     const msg = e?.message||'';
     if(msg.toLowerCase().includes('permission') || msg.includes('PERMISSION_DENIED')){
-      showErr('Firestore permission error. Update your Firestore Rules in Firebase Console — see fix below.');
+      showErr('Firebase permission error. Ask Bayo to fix the Firestore Rules: +234 816 543 8265');
     } else if(!navigator.onLine){
-      showErr('No internet. Check connection and try again.');
+      showErr('No internet. First login needs a connection — offline works after that.');
     } else {
       showErr('Failed: ' + (msg.slice(0,100)||'unknown error'));
     }
@@ -105,16 +150,37 @@ async function doLogin(){
   btn.textContent='▶ Login'; btn.disabled=false;
 }
 
+// Silently refresh cached agent profile from Firestore in background
+async function refreshAgentBackground(agentId, phone, localFmt){
+  try{
+    let doc = await db.collection('admin_agents').doc(agentId).get();
+    if(!doc.exists){
+      const [s1,s2] = await Promise.all([
+        db.collection('admin_agents').where('phone','==',phone).get(),
+        db.collection('admin_agents').where('phone','==',localFmt).get()
+      ]);
+      const d = [...s1.docs, ...s2.docs][0];
+      if(!d) return;
+      doc = d;
+    }
+    const fresh = { id:doc.id, ...doc.data() };
+    localStorage.setItem('ag_agent', JSON.stringify(fresh));
+    if(agent && agent.id === fresh.id) agent = fresh;
+  }catch(e){ /* silent — cached profile is valid */ }
+}
+
 async function doRegister(){
   // Self-registration is not allowed — agents must be added by admin
-  showErr("You can't self-register. AariNAT must add you. Call +234 814 507 3941");
+  showErr("You can't self-register. AariNAT must add you. Call +234 816 543 8265");
 }
 
 function showErr(msg){ const e=$('login-err'); e.textContent=msg; e.style.display='block'; }
 
 function startApp(){
   $('login').style.display='none';
-  $('app').style.display='block';
+  // Use 'flex' for the app — it uses flex layout for header/main/nav stacking
+  $('app').style.display='flex';
+  $('app').style.flexDirection='column';
   $('agent-name-hdr').textContent=agent.name;
   SQ.ping();
   go('submit');
@@ -188,13 +254,19 @@ async function submitDeal(){
   try{
     if(db&&navigator.onLine){ await db.collection('admin_deals').add(deal); }
     else{ SQ.push({t:'deal',d:deal}); }
-    showFB(fb,'ok',`✅ "${name}" submitted! Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
+    showFB(fb,'ok',`✅ "${name}" submitted! ${navigator.onLine?'':'(Saved offline — will reach Bayo when internet returns.) '}Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
     // Reset form
-    ['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
+	['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
     $('s-terms').value='1';
     document.querySelectorAll('.tier').forEach(t=>t.classList.remove('sel'));
     selTier=null; $('comm-box').style.display='none';
-  }catch(e){ showFB(fb,'bad','Submission failed. Check connection.'); }
+    resetCSVCount();
+  }catch(e){
+    // Write failed — queue it so the deal is never lost
+    SQ.push({t:'deal',d:deal});
+    showFB(fb,'ok',`📥 "${name}" saved offline — will reach Bayo when connection returns.`);
+    console.warn('submitDeal write failed, queued:', e?.message);
+  }
   btn.textContent='📤 Submit to Bayo'; btn.disabled=false;
 }
 
@@ -203,25 +275,47 @@ function showFB(el,type,msg){ el.className=`feedback ${type}`; el.textContent=ms
 // ── My Deals ───────────────────────────────────────────────────────────────
 async function renderDeals(){
   const c=$('deals-list'); c.innerHTML='<p style="text-align:center;color:var(--sub);padding:2rem;">Loading...</p>';
+
+  // Always show offline-queued deals first (they exist even without internet)
+  const queued = SQ.q
+    .filter(x => x.op?.t === 'deal' && x.op?.d?.agent?.id === agent.id)
+    .map(x => ({ _queuedId: x.id, _offline: true, ...x.op.d }));
+
+  let deals = [];
   try{
-    const snap=await db.collection('admin_deals').where('agent.phone','==',agent.phone).get();
-    const deals=snap.docs.map(d=>({id:d.id,...d.data()}));
+    // Try by agent.id first (most reliable), fall back to agent.phone
+    const snap = await db.collection('admin_deals').where('agent.id','==',agent.id).get();
+    deals = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(!deals.length){
+      // Fallback for deals submitted before agent had an ID cached
+      const snap2 = await db.collection('admin_deals').where('agent.phone','==',agent.phone).get();
+      deals = snap2.docs.map(d=>({id:d.id,...d.data()}));
+    }
     deals.sort((a,b)=>{ const ta=a.timestamp?.toDate?a.timestamp.toDate():new Date(a.timestamp||0); const tb=b.timestamp?.toDate?b.timestamp.toDate():new Date(b.timestamp||0); return tb-ta; });
-    if(!deals.length){ c.innerHTML='<p style="text-align:center;color:var(--sub);padding:2rem;">No deals yet. Submit your first school!</p>'; return; }
-    c.innerHTML=deals.map(d=>{
-      const chipCls={pending:'chip-p',approved:'chip-a',rejected:'chip-r'}[d.status||'pending'];
-      const comm=Math.round((d.tier?.price||0)*((d.agent?.commission||20)/100)*(d.terms||1));
-      return `<div class="deal ${d.status||'pending'}">
-        <span class="chip ${chipCls}">${(d.status||'pending').toUpperCase()}</span>
-        <div class="deal-name">${esc(d.school?.name)}</div>
-        <div class="deal-meta">📊 ${d.school?.studentCount||0} students · ${esc(d.tier?.name||'—')}</div>
-        <div class="deal-meta">📱 ${esc(d.school?.phone||'—')}</div>
-        <div class="deal-meta" style="color:var(--money);font-weight:600;">Your commission: ${fmt(comm)}</div>
-        ${d.schoolId?`<div class="deal-meta" style="color:#60a5fa;">School ID: ${d.schoolId}</div>`:''}
-        ${d.status==='approved'?`<div style="margin-top:0.5rem;"><button class="btn-money btn-sm" onclick="resendOnboarding('${esc(d.school?.phone)}','${esc(d.school?.name)}','${d.schoolId||''}')">📲 Send Onboarding WhatsApp</button></div>`:''}
-      </div>`;
-    }).join('');
-  }catch(e){ c.innerHTML='<p style="color:var(--danger);padding:1rem;">Failed to load. Check connection.</p>'; }
+  }catch(e){ /* offline — queued deals still show */ }
+
+  const allDeals = [...queued, ...deals];
+  if(!allDeals.length){ c.innerHTML='<p style="text-align:center;color:var(--sub);padding:2rem;">No deals yet. Submit your first school!</p>'; return; }
+
+  c.innerHTML=allDeals.map(d=>{
+    const isOffline = !!d._offline;
+    const status = isOffline ? 'queued' : (d.status||'pending');
+    const chipCls = status==='approved'?'chip-a':status==='rejected'?'chip-r':'chip-p';
+    const comm=Math.round((d.tier?.price||0)*((d.agent?.commission||20)/100)*(d.terms||1));
+    const ts = isOffline ? 'Saved offline — syncing when online' :
+      (d.timestamp?.toDate ? d.timestamp.toDate().toLocaleDateString('en-NG') : 'just now');
+    return `<div class="deal ${status==='approved'?'appr':status==='rejected'?'rejt':'pend'}" style="${isOffline?'opacity:0.85;':''}">
+      <span class="chip ${chipCls}">${status.toUpperCase()}</span>
+      <div class="deal-name">${esc(d.school?.name)}</div>
+      <div class="deal-meta">📊 ${d.school?.studentCount||0} students · ${esc(d.tier?.name||'—')}</div>
+      <div class="deal-meta">📱 ${esc(d.school?.phone||'—')}</div>
+      <div class="deal-meta" style="color:var(--money);font-weight:600;">Your commission: ${fmt(comm)}</div>
+      <div class="deal-meta" style="font-size:0.72rem;color:var(--sub);">${ts}</div>
+      ${d.schoolId?`<div class="deal-meta" style="color:#60a5fa;">School ID: ${d.schoolId}</div>`:''}
+      ${isOffline?`<div class="deal-meta" style="color:#fbbf24;font-size:0.72rem;">⏳ Will reach Bayo when internet returns</div>`:''}
+      ${status==='approved'?`<div style="margin-top:0.5rem;"><button class="btn-money btn-sm" onclick="resendOnboarding('${esc(d.school?.phone)}','${esc(d.school?.name)}','${d.schoolId||''}')">📲 Send Onboarding WhatsApp</button></div>`:''}
+    </div>`;
+  }).join('');
 }
 
 function resendOnboarding(phone, schoolName, schoolId){
@@ -473,11 +567,46 @@ function resetCSVCount() {
   // Don't clear the student count field — let agent decide if they want to keep it
 }
 
+// ── Deep-link support ──────────────────────────────────────────────────────
+// When admin sends WhatsApp with ?phone=08012345678 the field pre-fills
+function checkDeepLink(){
+  try{
+    const p = new URLSearchParams(window.location.search).get('phone') || new URLSearchParams(window.location.search).get('p');
+    if(!p) return;
+    const norm  = normalizePhone(p);
+    const local = norm.startsWith('234') ? '0' + norm.slice(3) : norm;
+    const input = $('l-phone'); if(!input) return;
+    input.value = local;
+    setTimeout(()=>{
+      const note = document.createElement('div');
+      note.style.cssText='background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.3);border-radius:8px;padding:0.65rem;font-size:0.82rem;color:#60a5fa;margin-bottom:0.75rem;';
+      note.textContent='📲 Phone pre-filled. Tap Login to activate your account.';
+      const f=$('phone-form'); if(f) f.insertBefore(note, f.firstChild);
+    },150);
+  }catch(e){}
+}
+
 // ── Startup ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
   SQ.ping();
+  checkDeepLink();
+  // ✅ Try cached session — works offline after first login
   const saved=localStorage.getItem('ag_agent');
-  if(saved){ try{ agent=JSON.parse(saved); startApp(); return; }catch(e){} }
+  if(saved){
+    try{
+      agent=JSON.parse(saved);
+      if(agent && agent.id && agent.name){
+        startApp();
+        // Refresh from Firestore silently in background
+        if(navigator.onLine && db){
+          const p = normalizePhone(agent.phone||'');
+          const l = p.startsWith('234') ? '0'+p.slice(3) : p;
+          refreshAgentBackground(agent.id, p, l).catch(()=>{});
+        }
+        return;
+      }
+    }catch(e){ localStorage.removeItem('ag_agent'); }
+  }
   $('login').style.display='flex';
   $('app').style.display='none';
   setTab('phone');
