@@ -129,7 +129,7 @@ async function doLogin(){
     });
 
     if(!allDocs.length){
-      showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 816 543 8265');
+      showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 814 507 3941');
       btn.textContent='▶ Login'; btn.disabled=false; return;
     }
     const doc = allDocs[0];
@@ -139,7 +139,7 @@ async function doLogin(){
   } catch(e){
     const msg = e?.message||'';
     if(msg.toLowerCase().includes('permission') || msg.includes('PERMISSION_DENIED')){
-      showErr('Firebase permission error. Ask Bayo to fix the Firestore Rules: +234 816 543 8265');
+      showErr('Firebase permission error. Ask Bayo to fix the Firestore Rules: +234 814 507 3941');
     } else if(!navigator.onLine){
       showErr('No internet. First login needs a connection — offline works after that.');
     } else {
@@ -171,7 +171,7 @@ async function refreshAgentBackground(agentId, phone, localFmt){
 
 async function doRegister(){
   // Self-registration is not allowed — agents must be added by admin
-  showErr("You can't self-register. AariNAT must add you. Call +234 816 543 8265");
+  showErr("You can't self-register. AariNAT must add you. Call +234 814 507 3941");
 }
 
 function showErr(msg){ const e=$('login-err'); e.textContent=msg; e.style.display='block'; }
