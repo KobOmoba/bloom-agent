@@ -1,8 +1,9 @@
 {
-  "name": "Bloom Agent",
-  "short_name": "Agent",
-  "description": "AariNAT Educational Bloom Agent App",
-  "start_url": "/bloom-agent/agent_index.html",
+  "name": "Bloom Agent \u2014 EduBloom",
+  "short_name": "Bloom Agent",
+  "description": "AariNAT Educational Bloom Field Agent App",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#7c3aed",
@@ -11,12 +12,14 @@
     {
       "src": "icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
