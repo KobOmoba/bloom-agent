@@ -325,34 +325,59 @@ function resendOnboarding(phone, schoolName, schoolId){
 
 // ── Earnings ───────────────────────────────────────────────────────────────
 async function renderEarnings(){
+  let entries=[];
   try{
-    const snap=await db.collection('admin_ledger').where('agentPhone','==',agent.phone).get();
-    const entries=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const total=entries.reduce((s,e)=>s+(e.amount||0),0);
-    const paid=entries.filter(e=>e.paid).reduce((s,e)=>s+(e.amount||0),0);
-    $('earn-total').textContent=fmt(total);
-    $('earn-paid').textContent=fmt(paid);
-    $('earn-pending').textContent=fmt(total-paid);
-    const tbody=$('earn-body');
-    tbody.innerHTML=entries.length===0?'<tr><td colspan="4" style="text-align:center;color:var(--sub);padding:2rem;">No earnings yet.</td></tr>':entries.map(e=>{
-      const dt=e.date?.toDate?e.date.toDate():new Date();
-      const paidCls=e.paid?'chip-a':'chip-p';
-      return `<tr><td>${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td><td style="font-size:0.75rem;">${e.schoolId||'—'}</td><td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td><td><span class="chip ${paidCls}" style="position:static;">${e.paid?'Paid':'Pending'}</span></td></tr>`;
-    }).join('');
-  }catch(e){ console.warn('Earnings:',e); }
+    if(db){
+      // Query both phone formats — admin may have stored either way
+      const phone=normalizePhone(agent.phone||'');
+      const localFmt=phone.startsWith('234')?'0'+phone.slice(3):phone;
+      const [s1,s2]=await Promise.all([
+        db.collection('admin_ledger').where('agentPhone','==',phone).get(),
+        db.collection('admin_ledger').where('agentPhone','==',localFmt).get()
+      ]);
+      // Deduplicate by doc ID
+      const seen=new Set();
+      entries=[...s1.docs,...s2.docs].filter(d=>{
+        if(seen.has(d.id))return false;seen.add(d.id);return true;
+      }).map(d=>({id:d.id,...d.data()}));
+      // Fallback: if still empty, try matching by agent name
+      if(!entries.length){
+        const s3=await db.collection('admin_ledger').where('agent','==',agent.name).get();
+        entries=s3.docs.map(d=>({id:d.id,...d.data()}));
+      }
+    }
+  }catch(e){console.warn('renderEarnings:',e?.message);}
+
+  const total=entries.reduce((s,e)=>s+(e.amount||0),0);
+  const paid=entries.filter(e=>e.paid).reduce((s,e)=>s+(e.amount||0),0);
+  const pending=total-paid;
+
+  $('earn-total').textContent=fmt(total);
+  $('earn-paid').textContent=fmt(paid);
+  $('earn-pending').textContent=fmt(pending);
+
+  const tbody=$('earn-body');if(!tbody)return;
+  tbody.innerHTML=entries.length===0
+    ?'<tr><td colspan="4" style="text-align:center;color:var(--sub);padding:2rem;">No earnings yet. Get your first deal approved!</td></tr>'
+    :entries
+      .sort((a,b)=>{
+        const ta=a.date?.toDate?a.date.toDate():new Date(a.date||0);
+        const tb=b.date?.toDate?b.date.toDate():new Date(b.date||0);
+        return tb-ta;
+      })
+      .map(e=>{
+        const dt=e.date?.toDate?e.date.toDate():new Date();
+        const typeLabel=e.type==='renewal'
+          ?'<span style="font-size:0.62rem;color:#a78bfa;display:block;">🔄 Renewal</span>'
+          :'<span style="font-size:0.62rem;color:#34d399;display:block;">✨ New school</span>';
+        return`<tr>
+          <td style="font-size:0.75rem;">${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td>
+          <td style="font-family:monospace;font-size:0.72rem;">${esc(e.schoolId||'—')}<br>${typeLabel}</td>
+          <td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td>
+          <td><span class="chip ${e.paid?'chip-a':'chip-p'}" style="position:static;">${e.paid?'✅ Paid':'⏳ Pending'}</span></td>
+        </tr>`;
+      }).join('');
 }
-
-
-// ── Smart Register Counter ─────────────────────────────────────────────────
-// Accepts: CSV, TXT (WhatsApp lists), JPG/PNG photos of paper registers
-// Photos: OCR via Tesseract.js loaded on demand — free, no API key needed
-
-let csvStudentCount = 0;
-let csvParsedNames  = [];
-
-
-
-// Strip prefix titles and list markers, return cleaned name or false
 function cleanName(raw) {
   // Strip leading numbering: "1.", "22.", "10.", "•", "-", "(1)"
   let s = raw.replace(/^[\s]*\d+[\.\)\s]+/, '').trim();
