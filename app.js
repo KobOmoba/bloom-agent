@@ -539,37 +539,106 @@ function readTextOrCSV(file) {
   reader.readAsText(file);
 }
 
-function readImageWithOCR(file) {
-  showLoading('📸 Reading photo... loading OCR engine (first time takes 30 seconds)');
-  const loadTesseract = () => new Promise((resolve, reject) => {
-    if (window.Tesseract) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    s.onload = resolve; s.onerror = reject;
+// ── IMAGE PREPROCESSING — greyscale + contrast boost before OCR ──────────────
+function preprocessImage(dataUrl){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const maxW=2400;
+      const scale=img.width>maxW?maxW/img.width:1;
+      canvas.width=Math.round(img.width*scale);
+      canvas.height=Math.round(img.height*scale);
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      const id=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; // greyscale
+        const e=Math.min(255,Math.max(0,(g-128)*1.6+128)); // contrast +60%
+        d[i]=d[i+1]=d[i+2]=e;
+      }
+      ctx.putImageData(id,0,0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+
+// ── CLAUDE VISION — uses AI if API key is available in localStorage ───────────
+async function tryClaudeVision(dataUrl){
+  const key=localStorage.getItem('edubloom_ai_key');
+  if(!key)return null;
+  try{
+    const b64=dataUrl.split(',')[1];
+    const mt=dataUrl.startsWith('data:image/png')?'image/png':'image/jpeg';
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,
+        'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-ipc':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1500,
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:mt,data:b64}},
+          {type:'text',text:'This is a Nigerian school class register or student list. It may be printed or handwritten. Extract every student name you can read, one per line. Return names only — no serial numbers, no class labels, no column headers, no other words.'}
+        ]}]})
+    });
+    const data=await res.json();
+    if(data.error)return null;
+    return data.content?.map(b=>b.text||'').join('\n')||null;
+  }catch(e){return null;}
+}
+
+// ── OCR MAIN — Claude Vision first, Tesseract fallback ───────────────────────
+async function readImageWithOCR(file){
+  showLoading('📸 Reading photo…');
+  const loadTesseract=()=>new Promise((resolve,reject)=>{
+    if(window.Tesseract){resolve();return;}
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload=resolve;s.onerror=reject;
     document.head.appendChild(s);
   });
-  const reader = new FileReader();
-  reader.onload = async ev => {
-    try {
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    const ld=document.getElementById('csv-loading');
+    const box=document.getElementById('csv-count-result');
+    try{
+      // Try Claude Vision first (higher accuracy — handles handwriting)
+      if(localStorage.getItem('edubloom_ai_key')){
+        if(ld)ld.textContent='🤖 Using AI vision for higher accuracy…';
+        const claudeText=await tryClaudeVision(ev.target.result);
+        if(claudeText&&claudeText.trim().length>5){
+          renderCountResult(extractNamesFromText(claudeText));
+          return;
+        }
+      }
+      // Fallback: Tesseract OCR with preprocessing
+      if(ld)ld.textContent='📸 Preprocessing image…';
+      const processed=await preprocessImage(ev.target.result);
       await loadTesseract();
-      const { data: { text } } = await Tesseract.recognize(ev.target.result, 'eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            const pct = Math.round((m.progress||0)*100);
-            const ld = document.getElementById('csv-loading');
-            if(ld) ld.textContent = '📸 Reading photo... ' + pct + '%';
-          }
+      if(ld)ld.textContent='📸 Reading photo… 0%';
+      const{data}=await Tesseract.recognize(processed,'eng',{
+        tessedit_pageseg_mode:'6', // PSM 6: uniform block of text — best for name lists
+        logger:m=>{
+          if(m.status==='recognizing text'&&ld)
+            ld.textContent='📸 Reading photo… '+Math.round((m.progress||0)*100)+'%';
         }
       });
-      const names = extractNamesFromText(text);
-      renderCountResult(names);
-    } catch(err) {
-      document.getElementById('csv-loading').style.display = 'none';
-      document.getElementById('csv-count-result').style.display = 'none';
-      alert('Photo reading failed: ' + (err.message||'unknown') + '\n\nTips:\n- Make sure photo is clear and well-lit\n- Hold phone steady above the register\n- Each name should be on its own line\n\nOr type the student count manually in the field below.');
+      // Confidence gate: warn if quality is very low
+      const conf=data.confidence||0;
+      if(conf<40&&ld){
+        ld.textContent='⚠️ Photo quality low ('+Math.round(conf)+'% confidence). Results may have errors — check names carefully or retake with better lighting.';
+        setTimeout(()=>{if(ld&&ld.parentNode)ld.style.display='none';},4000);
+      }
+      renderCountResult(extractNamesFromText(data.text));
+    }catch(err){
+      if(ld)ld.style.display='none';
+      if(box)box.style.display='none';
+      alert('Photo reading failed: '+(err.message||'unknown')+'\n\nTips:\n- Good lighting, hold phone steady\n- Each name on its own line\n- Or type the count manually below.');
     }
   };
-  reader.onerror = () => alert('Could not read image.');
+  reader.onerror=()=>alert('Could not read image.');
   reader.readAsDataURL(file);
 }
 
