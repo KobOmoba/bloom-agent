@@ -514,10 +514,9 @@ function readTextOrCSV(file) {
   reader.readAsText(file);
 }
 
-// OCR config — upgrade path: set GOOGLE_VISION_KEY for best handwriting accuracy
-// Get free key: console.cloud.google.com → Enable "Cloud Vision API" → Credentials
-// Free tier: 1000 images/month, then ₦2.25 per 1000
-const GOOGLE_VISION_KEY = ''; // paste your key here when ready
+// OCR config — Gemini Vision first, OCR.space fallback, Tesseract offline last
+// Set Gemini key in Settings → 🤖 AI OCR, or it auto-reads from localStorage
+const GEMINI_KEY = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
 
 function readImageWithOCR(file) {
   showLoading('📸 Reading photo...');
@@ -528,24 +527,44 @@ function readImageWithOCR(file) {
     const mime    = file.type || 'image/jpeg';
     let text = '';
 
+    // Re-read key at call time (may be set after page load)
+    const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+
     if (navigator.onLine) {
-      // ── 1st choice: Google Cloud Vision (best for Nigerian handwriting) ──
-      if (GOOGLE_VISION_KEY) {
+      // ── 1st choice: Gemini Vision AI (best for Nigerian handwriting) ──
+      if (apiKey) {
         try {
           const ld = document.getElementById('csv-loading');
-          if(ld) ld.textContent = '📸 Reading with Google Vision...';
-          const r = await fetch(
-            `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
-            { method:'POST', headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ requests:[{ image:{content:base64},
-                features:[{type:'DOCUMENT_TEXT_DETECTION'}] }] }) }
-          );
+          if(ld) ld.textContent = '🤖 Reading with Gemini AI...';
+          const model = 'gemini-2.0-flash';
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+          const prompt = `You are scanning a Nigerian school attendance register or class list.
+Extract ONLY the student full names from this image.
+Rules:
+- Output ONE name per line, nothing else
+- Include BOTH surname and first name as written (e.g. OGUNLADE MICHEAL)
+- Common Nigerian surnames: OGUNLADE, KASALI, GBELEKALE, OYESANWO, AKINWANDE, OLAYIDE, ADEOYE, ALAWO, ALIMI, ADEBAYO, OGUNDEYI, KOLAWOLE, ADEGUNLE
+- Common Muslim first names: RASAQ, MUFEEZ, ZAINAB, WASILAT, AMINAT, MUSTEQEEM, IBRAHIM
+- Common Christian names: GODWIN, ELIZABETH, MICHEAL, GABRIEL, CECILIA, DORCAS, DEBORAH
+- Keep HEPHZIBAH, OLUWANMI, OLUWASEUN etc. intact — do NOT split them
+- Skip: serial numbers, class names, dates, headers like NAMES/S/N/CLASS
+- Skip: blank lines, dashes, checkmarks
+Output only names, one per line:`;
+          const body = {
+            contents:[{parts:[
+              {text: prompt},
+              {inlineData:{mimeType: mime, data: base64}}
+            ]}],
+            generationConfig:{temperature:0.1,maxOutputTokens:1024}
+          };
+          const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
           const d = await r.json();
-          text = d.responses?.[0]?.fullTextAnnotation?.text || '';
-        } catch(e) { console.warn('Google Vision failed:', e); }
+          if (d.error) throw new Error(d.error.message);
+          text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        } catch(e) { console.warn('Gemini failed:', e.message); text = ''; }
       }
 
-      // ── 2nd choice: OCR.space free tier (no setup, decent handwriting) ──
+      // ── 2nd choice: OCR.space free tier ──
       if (!text.trim()) {
         try {
           const ld = document.getElementById('csv-loading');
@@ -557,8 +576,10 @@ function readImageWithOCR(file) {
           const fd = new FormData();
           fd.append('file', blob, 'reg.jpg');
           fd.append('language', 'eng');
-          fd.append('apikey', 'helloworld'); // free demo key — get a personal key at ocr.space (25k/month free)
+          fd.append('apikey', 'helloworld');
           fd.append('isHandwritten', 'true');
+          fd.append('isTable', 'true');
+          fd.append('detectOrientation', 'true');
           const resp = await fetch('https://api.ocr.space/parse/image', { method:'POST', body:fd });
           const result = await resp.json();
           text = result.ParsedResults?.[0]?.ParsedText || '';
@@ -570,7 +591,6 @@ function readImageWithOCR(file) {
       const names = extractNamesFromText(text);
       renderCountResult(names);
     } else {
-      // ── 3rd choice: Tesseract.js (offline fallback, slower) ──
       await readImageWithTesseract(imgData);
     }
   };
@@ -899,3 +919,149 @@ document.addEventListener('DOMContentLoaded',()=>{
   window.bloomAgentVoice={start:startL,stop:stopL,say};
   console.log('🎙️ Bloom Agent Voice ready.');
 })();
+
+
+// ══════════════════════════════════════════════════
+// 4 AI ONBOARDING AGENTS
+// ══════════════════════════════════════════════════
+
+async function callGeminiText(prompt) {
+  const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+  if (!apiKey) {
+    return '⚠️ No Gemini key set. Go to Settings → 🤖 AI-Powered OCR to add your free key from aistudio.google.com';
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const body = {
+    contents:[{parts:[{text: prompt}]}],
+    generationConfig:{temperature:0.7, maxOutputTokens:512}
+  };
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message);
+  return d.candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
+}
+
+function setAIResult(elId, text, loading) {
+  const el = document.getElementById(elId);
+  if (el) el.textContent = text;
+  if (loading) loading.textContent = '';
+}
+
+async function runScoutAI() {
+  const el = document.getElementById('scout-result');
+  if (el) el.textContent = '🤖 Scouting...';
+  try {
+    const result = await callGeminiText(
+      `You are an EduBloom field agent in Nigeria. Give me a practical 5-point checklist for identifying private schools in my area that are ready to adopt a digital management system like EduBloom. 
+      Focus on: visible signs of growth, fee payment problems, attendance tracking pain points, competition from bigger schools nearby, and principal frustration with paperwork.
+      Keep each point to 1 sentence. Use simple Nigerian English. Start each point with an emoji.`
+    );
+    if (el) el.textContent = result;
+  } catch(e) {
+    if (el) el.textContent = '❌ Error: ' + e.message;
+  }
+}
+
+async function runPitchCoachAI() {
+  const type = document.getElementById('pitch-school-type')?.value;
+  const el = document.getElementById('pitch-result');
+  if (!type) { alert('Please select a school type first.'); return; }
+  if (el) el.textContent = '🤖 Writing pitch...';
+  try {
+    const result = await callGeminiText(
+      `You are a sales coach for EduBloom — a Nigerian school management app that costs ₦30,000–₦120,000/term and pays 20% commission to agents.
+      Write a short, convincing 60-second verbal sales pitch for a ${type} in Nigeria.
+      Mention: how it solves their biggest pain (fee collection, attendance, report cards), the price range, and the free demo offer.
+      Use simple, friendly Nigerian English. No bullet points — write it like you're speaking directly to the principal.`
+    );
+    if (el) el.textContent = result;
+  } catch(e) {
+    if (el) el.textContent = '❌ Error: ' + e.message;
+  }
+}
+
+async function runObjectionAI() {
+  const objection = document.getElementById('objection-type')?.value;
+  const el = document.getElementById('objection-result');
+  if (!objection) { alert('Please select an objection first.'); return; }
+  if (el) el.textContent = '🤖 Crafting response...';
+  try {
+    const result = await callGeminiText(
+      `You are a sales trainer for EduBloom, a Nigerian school management app.
+      A school principal just said: "${objection}"
+      Give me a calm, confident 3-sentence response that acknowledges their concern, reframes it, and ends with a soft close (offer a free demo or trial).
+      Use friendly Nigerian English. Be respectful, not pushy.`
+    );
+    if (el) el.textContent = result;
+  } catch(e) {
+    if (el) el.textContent = '❌ Error: ' + e.message;
+  }
+}
+
+async function runFollowupAI() {
+  const scenario = document.getElementById('followup-scenario')?.value;
+  const el = document.getElementById('followup-result');
+  if (!scenario) { alert('Please select a scenario first.'); return; }
+  if (el) el.textContent = '🤖 Writing message...';
+  try {
+    const result = await callGeminiText(
+      `You are an EduBloom agent in Nigeria writing a WhatsApp follow-up message to a school principal.
+      Situation: ${scenario}.
+      Write a short (3–5 lines), friendly, professional WhatsApp message in Nigerian English.
+      Sign off as "Your EduBloom Agent".
+      Do NOT use formal letter format — write it like a real WhatsApp message.`
+    );
+    if (el) el.textContent = result;
+  } catch(e) {
+    if (el) el.textContent = '❌ Error: ' + e.message;
+  }
+}
+
+// ── Agent App Settings: Gemini key ────────────────────────────────────────
+function loadAgentGeminiKey() {
+  const saved = localStorage.getItem('gemini_api_key') || '';
+  const inp = document.getElementById('ag-gemini-key');
+  const status = document.getElementById('ag-gemini-status');
+  if (inp) inp.value = saved;
+  if (status) {
+    status.textContent = saved
+      ? '✅ AI OCR active — register scanning + AI agents use Gemini'
+      : '⚠️ No key — OCR.space used for scanning, AI agents unavailable';
+    status.style.color = saved ? '#22c55e' : '#f59e0b';
+  }
+}
+
+function saveAgentGeminiKey() {
+  const inp = document.getElementById('ag-gemini-key');
+  const key = (inp?.value || '').trim();
+  if (key && !key.startsWith('AIza') && !key.startsWith('AQ.')) {
+    alert('Invalid key format. Should start with AIzaSy...');
+    return;
+  }
+  if (key) {
+    localStorage.setItem('gemini_api_key', key);
+    window.GEMINI_API_KEY = key;
+    alert('✅ Gemini key saved! AI agents and OCR are now active.');
+  } else {
+    localStorage.removeItem('gemini_api_key');
+    window.GEMINI_API_KEY = '';
+  }
+  loadAgentGeminiKey();
+}
+
+function clearAgentGeminiKey() {
+  localStorage.removeItem('gemini_api_key');
+  window.GEMINI_API_KEY = '';
+  const inp = document.getElementById('ag-gemini-key'); if(inp) inp.value = '';
+  loadAgentGeminiKey();
+}
+
+// Load key status on page load
+document.addEventListener('DOMContentLoaded', () => {
+  // Restore key from localStorage into window context
+  const saved = localStorage.getItem('gemini_api_key');
+  if (saved) window.GEMINI_API_KEY = saved;
+  loadAgentGeminiKey();
+});
+
+function goTab(tab) { go(tab); }
