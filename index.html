@@ -135,7 +135,86 @@
     </section>
 
     <!-- MY DEALS -->
-    <section id="sec-deals" class="sec">
+        <!-- AI ONBOARDING AGENTS -->
+    <section id="sec-ai-agents" class="sec">
+      <div class="card" style="border-left:4px solid #818cf8;">
+        <div class="ct" style="margin-bottom:0.5rem;">🤖 AI Onboarding Assistants</div>
+        <p style="font-size:0.8rem;color:var(--sub);margin-bottom:1rem;line-height:1.55;">
+          4 AI agents to help you close schools faster and manage your pipeline.
+        </p>
+
+        <!-- Agent 1: School Scout -->
+        <div style="background:rgba(129,140,248,0.08);border:1px solid rgba(129,140,248,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
+            <div style="width:38px;height:38px;background:#7c3aed;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🔍</div>
+            <div><div style="font-weight:700;font-size:0.88rem;">School Scout AI</div><div style="font-size:0.72rem;color:var(--sub);">Finds schools in your area ready to onboard</div></div>
+          </div>
+          <div id="scout-result" style="font-size:0.8rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;"></div>
+          <button class="btn-brand btn-small" onclick="runScoutAI()" style="font-size:0.78rem;">🔍 Scout My Area</button>
+        </div>
+
+        <!-- Agent 2: Pitch Coach -->
+        <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
+            <div style="width:38px;height:38px;background:#059669;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🎯</div>
+            <div><div style="font-weight:700;font-size:0.88rem;">Pitch Coach AI</div><div style="font-size:0.72rem;color:var(--sub);">Customise your sales pitch for any school type</div></div>
+          </div>
+          <select id="pitch-school-type" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
+            <option value="">Select school type…</option>
+            <option value="private primary">Private Primary School</option>
+            <option value="private secondary">Private Secondary (JSS/SSS)</option>
+            <option value="private nursery/primary">Nursery & Primary</option>
+            <option value="Islamic school">Islamic/Islamiyya School</option>
+            <option value="government primary">Government Primary School</option>
+          </select>
+          <div id="pitch-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
+          <button class="btn-brand btn-small" onclick="runPitchCoachAI()" style="font-size:0.78rem;background:#059669;">🎯 Generate Pitch</button>
+        </div>
+
+        <!-- Agent 3: Objection Handler -->
+        <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
+            <div style="width:38px;height:38px;background:#d97706;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🛡️</div>
+            <div><div style="font-weight:700;font-size:0.88rem;">Objection Handler AI</div><div style="font-size:0.72rem;color:var(--sub);">Smart responses to principal pushback</div></div>
+          </div>
+          <select id="objection-type" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
+            <option value="">Select objection…</option>
+            <option value="too expensive">It's too expensive</option>
+            <option value="we already use another system">We already use another system</option>
+            <option value="teachers won't use it">Teachers won't use it</option>
+            <option value="we need to think about it">We need to think about it</option>
+            <option value="internet is bad in our area">No reliable internet</option>
+            <option value="we are a small school">We're too small</option>
+          </select>
+          <div id="objection-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
+          <button class="btn-brand btn-small" onclick="runObjectionAI()" style="font-size:0.78rem;background:#d97706;">🛡️ Handle This</button>
+        </div>
+
+        <!-- Agent 4: Follow-up Writer -->
+        <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:1rem;margin-bottom:0.5rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
+            <div style="width:38px;height:38px;background:#dc2626;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">📲</div>
+            <div><div style="font-weight:700;font-size:0.88rem;">Follow-up Writer AI</div><div style="font-size:0.72rem;color:var(--sub);">WhatsApp messages that get replies from principals</div></div>
+          </div>
+          <select id="followup-scenario" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
+            <option value="">Select scenario…</option>
+            <option value="first visit, principal was interested">After first visit — they were interested</option>
+            <option value="first visit, principal was cold/busy">After first visit — they were cold/busy</option>
+            <option value="demo done, waiting for decision">Demo done, waiting for decision</option>
+            <option value="no response to last message">No response to last WhatsApp</option>
+            <option value="school is ready to sign up">School is ready — send payment link</option>
+          </select>
+          <div id="followup-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
+          <button class="btn-brand btn-small" onclick="runFollowupAI()" style="font-size:0.78rem;background:#dc2626;">📲 Write Message</button>
+        </div>
+
+        <p style="font-size:0.72rem;color:var(--sub);text-align:center;margin-top:0.5rem;">
+          💡 Add a Gemini API key in <button onclick="goTab('settings')" style="background:none;border:none;color:#818cf8;cursor:pointer;font-size:0.72rem;text-decoration:underline;">Settings</button> for smarter AI responses
+        </p>
+      </div>
+    </section>
+
+<section id="sec-deals" class="sec">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
         <div style="font-size:1rem;font-weight:700;">My Submitted Deals</div>
         <button class="btn-sm btn-ghost" onclick="renderDeals()">🔄 Refresh</button>
@@ -176,6 +255,8 @@
     <button class="nlink on" data-tab="submit" onclick="go('submit')"><span>📝</span>Submit</button>
     <button class="nlink" data-tab="deals" onclick="go('deals')"><span>📋</span>My Deals</button>
     <button class="nlink" data-tab="earnings" onclick="go('earnings')"><span>💰</span>Earnings</button>
+    <button class="nlink" data-tab="ai-agents" onclick="go('ai-agents')"><span>🤖</span>AI</button>
+    <button class="nlink" data-tab="settings" onclick="go('settings')"><span>⚙️</span>Settings</button>
   </nav>
 </div>
 
@@ -185,5 +266,28 @@
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
     }
   </script>
+    <!-- SETTINGS -->
+    <section id="sec-settings" class="sec">
+      <div class="card" style="border-left:4px solid #818cf8;">
+        <div class="ct">🤖 AI-Powered OCR</div>
+        <p style="font-size:0.8rem;color:var(--sub);margin-bottom:0.75rem;line-height:1.55;">
+          Add a free <strong>Gemini API key</strong> to enable high-accuracy reading of handwritten school registers.
+          Get one free at <strong>aistudio.google.com</strong> → Create API Key.
+        </p>
+        <label style="font-size:0.82rem;font-weight:600;">Gemini API Key</label>
+        <div style="display:flex;gap:0.4rem;margin:0.4rem 0 0.6rem;">
+          <input type="password" id="ag-gemini-key" placeholder="AIzaSy..."
+            style="flex:1;font-family:monospace;font-size:0.78rem;" autocomplete="off">
+          <button onclick="document.getElementById('ag-gemini-key').type=document.getElementById('ag-gemini-key').type==='password'?'text':'password'"
+            style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:0 0.6rem;cursor:pointer;">👁️</button>
+        </div>
+        <div id="ag-gemini-status" style="font-size:0.75rem;color:var(--sub);margin-bottom:0.75rem;"></div>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn-brand btn-small" onclick="saveAgentGeminiKey()">💾 Save Key</button>
+          <button class="btn-ghost btn-small" onclick="clearAgentGeminiKey()">🗑️ Clear</button>
+        </div>
+      </div>
+    </section>
+
 </body>
 </html>
