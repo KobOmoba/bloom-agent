@@ -248,13 +248,31 @@ async function submitDeal(){
     agent:{ id:agent.id, name:agent.name, phone:agent.phone, commission:agent.commission||20 },
     school:{ name, phone, email, studentCount:count },
     tier:{ name:selTier.name, price:selTier.price },
-    terms, notes
+    terms, notes,
+    // AI-scanned student names — used by onboarding agent to pre-load school
+    scannedStudents: csvParsedNames.length ? csvParsedNames : [],
+    scannedCount: csvParsedNames.length || 0,
+    onboardingStatus: 'awaiting_principal'
   };
 
   try{
     if(db&&navigator.onLine){ await db.collection('admin_deals').add(deal); }
     else{ SQ.push({t:'deal',d:deal}); }
     showFB(fb,'ok',`✅ "${name}" submitted! ${navigator.onLine?'':'(Saved offline — will reach Bayo when internet returns.) '}Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
+    // Send WhatsApp onboarding link to principal if phone available
+    if (phone && deal.scannedCount > 0) {
+      const schoolUrl = encodeURIComponent(`https://school.edubloom.com.ng`);
+      const msg = encodeURIComponent(
+        `Hello, this is EduBloom 🌸\n\nYour school has been registered with *${deal.scannedCount} students* already loaded!\n\nClick to complete your school setup in 2 minutes:\nhttps://school.edubloom.com.ng\n\nYour setup code will be provided by your agent.`
+      );
+      const waLink = `https://wa.me/${phone}?text=${msg}`;
+      // Show as a tap-to-send button (agent must tap, not auto-send)
+      const fb2 = document.createElement('div');
+      fb2.style.cssText='margin-top:0.6rem;';
+      fb2.innerHTML = `<a href="${waLink}" target="_blank" style="display:block;background:#25d366;color:#fff;text-align:center;padding:0.7rem;border-radius:10px;font-weight:700;font-size:0.85rem;text-decoration:none;">📲 Send Onboarding Link to Principal</a>`;
+      fb.parentNode.insertBefore(fb2, fb.nextSibling);
+    }
+    pipelineReset();
     // Reset form
 	['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
     $('s-terms').value='1';
@@ -398,53 +416,236 @@ function isBulletLine(line) {
 }
 
 function showLoading(msg) {
-  const box = document.getElementById('csv-count-result');
-  const ld  = document.getElementById('csv-loading');
-  box.style.display = 'block';
-  ld.style.display  = 'block';
-  ld.textContent    = msg || 'Reading...';
-  document.getElementById('csv-name-preview').innerHTML = '';
-  document.getElementById('csv-class-breakdown').innerHTML = '';
+  // Drive pipeline to processing state
+  const scan = document.getElementById('pipe-state-scan');
+  const proc = document.getElementById('pipe-state-processing');
+  const result = document.getElementById('pipe-state-result');
+  const label = document.getElementById('pipe-step-label');
+  if (scan)   scan.style.display   = 'none';
+  if (proc)   proc.style.display   = 'block';
+  if (result) result.style.display = 'none';
+  if (label)  label.textContent    = 'AI Reading Register...';
+
+  const ld = document.getElementById('csv-loading');
+  if (ld) { ld.style.display = 'block'; ld.textContent = msg || 'AI reading...'; }
+
+  // Animate progress bar
+  let pct = 20;
+  const bar = document.getElementById('pipe-progress-bar');
+  if (bar) {
+    bar.style.width = pct + '%';
+    const interval = setInterval(() => {
+      pct = Math.min(pct + 8, 85);
+      bar.style.width = pct + '%';
+      if (pct >= 85) clearInterval(interval);
+    }, 600);
+    bar._interval = interval;
+  }
 }
 
 function renderCountResult(names) {
   const unique = [...new Set(names.map(n=>n.trim()).filter(n=>n.length>1))];
-  document.getElementById('csv-loading').style.display = 'none';
+
+  // Hide processing state
+  const proc = document.getElementById('pipe-state-processing');
+  if (proc) proc.style.display = 'none';
+
   if (!unique.length) {
-    document.getElementById('csv-count-result').style.display = 'none';
-    alert('No student names found.\n\nFor photos: ensure the image is clear and well-lit.\nFor CSV/text: one name per line.');
+    pipelineReset();
+    alert('No student names found.\n\nTip: Hold phone directly above the register. Flatten the page. Good lighting.');
     return;
   }
+
   csvStudentCount = unique.length;
   csvParsedNames  = unique.map(name => ({ name, class: null }));
   const tier = TIERS_LIST.find(t => csvStudentCount <= t.max) || TIERS_LIST[4];
   const comm = Math.round(tier.price * 0.20);
-  document.getElementById('csv-student-count').textContent = csvStudentCount;
-  document.getElementById('csv-tier-name').textContent     = tier.name;
-  document.getElementById('csv-school-pays').textContent   = '\u20a6' + tier.price.toLocaleString('en-NG') + '/term';
-  document.getElementById('csv-your-comm').textContent     = '\u20a6' + comm.toLocaleString('en-NG');
-  const preview = unique.slice(0, 15);
+
+  // Update all count display elements (pipeline + legacy)
+  ['csv-student-count'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=csvStudentCount; });
+  ['csv-tier-name'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=tier.name; });
+  ['csv-school-pays'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='\u20a6'+tier.price.toLocaleString('en-NG')+'/term'; });
+  ['csv-your-comm'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='\u20a6'+comm.toLocaleString('en-NG'); });
+
+  const preview = unique.slice(0, 12);
   const extra   = unique.length - preview.length;
-  document.getElementById('csv-name-preview').innerHTML =
-    '<strong style="display:block;margin-bottom:5px;color:white;">Names found (' + unique.length + ') — verify a few are correct:</strong>' +
-    preview.map(n => '<span style="display:inline-block;background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 7px;margin:2px;font-size:0.72rem;color:#e2e8f0;">' + esc(n) + '</span>').join('') +
-    (extra > 0 ? '<div style="font-size:0.71rem;color:var(--sub);margin-top:4px;">...and ' + extra + ' more</div>' : '');
-  document.getElementById('csv-class-breakdown').innerHTML = '';
-  document.getElementById('csv-count-result').style.display = 'block';
+  const previewHTML =
+    '<strong style="display:block;margin-bottom:4px;color:white;font-size:0.73rem;">✅ ' + unique.length + ' names found — sample:</strong>' +
+    preview.map(n => '<span style="display:inline-block;background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 6px;margin:2px;font-size:0.7rem;color:#e2e8f0;">' + esc(n) + '</span>').join('') +
+    (extra > 0 ? '<div style="font-size:0.7rem;color:var(--sub);margin-top:3px;">...and ' + extra + ' more</div>' : '');
+
+  ['csv-name-preview'].forEach(id => { const e=document.getElementById(id); if(e) e.innerHTML=previewHTML; });
+
+  // Show pipeline result state
+  const scan   = document.getElementById('pipe-state-scan');
+  const result = document.getElementById('pipe-state-result');
+  const label  = document.getElementById('pipe-step-label');
+  const dot    = document.getElementById('pipe-step-dot');
+  if (scan)   scan.style.display   = 'none';
+  if (result) result.style.display = 'block';
+  if (label)  label.textContent    = 'STEP 2 — Confirm Student Count';
+  if (dot)    dot.style.background = '#34d399';
+
+  // Also auto-fill the student count field
+  const scount = document.getElementById('s-count');
+  if (scount) { scount.value = csvStudentCount; autoTier(); }
+}
+
+function pipelineReset() {
+  const scan   = document.getElementById('pipe-state-scan');
+  const proc   = document.getElementById('pipe-state-processing');
+  const result = document.getElementById('pipe-state-result');
+  const label  = document.getElementById('pipe-step-label');
+  const dot    = document.getElementById('pipe-step-dot');
+  if (scan)   scan.style.display   = 'block';
+  if (proc)   proc.style.display   = 'none';
+  if (result) result.style.display = 'none';
+  if (label)  label.textContent    = 'STEP 1 — Scan the School Register';
+  if (dot)    dot.style.background = '#7c3aed';
+  csvStudentCount = 0; csvParsedNames = [];
+  const scount = document.getElementById('s-count'); if(scount) scount.value='';
+}
+
+function pipelineRescan() { pipelineReset(); }
+
+function pipelineConfirmCount() {
+  // Move to step 3: fill school info
+  const label = document.getElementById('pipe-step-label');
+  const dot   = document.getElementById('pipe-step-dot');
+  if (label) label.textContent = 'STEP 3 — Fill School Details & Submit';
+  if (dot)   dot.style.background = '#fbbf24';
+
+  // Auto-fill count and auto-select tier
+  const scount = document.getElementById('s-count');
+  if (scount) { scount.value = csvStudentCount; autoTier(); }
+
+  // Scroll smoothly to school name field
+  const nameField = document.getElementById('s-name');
+  if (nameField) {
+    nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    nameField.focus();
+  }
+  // Show a quick toast
+  pipelineToast('✅ Count locked! Now fill in school name + principal contact.');
+}
+
+function pipelineToast(msg) {
+  let t = document.getElementById('pipe-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'pipe-toast';
+    t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:0.6rem 1.2rem;border-radius:20px;font-size:0.82rem;font-weight:700;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:none;transition:opacity 0.4s;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  setTimeout(() => { t.style.opacity = '0'; }, 3000);
 }
 
 function handleRegisterCSV(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const name = (file.name || '').toLowerCase();
-  const type = (file.type || '').toLowerCase();
-  const isImage = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/.test(name);
-  if (isImage) {
-    readImageWithOCR(file);
-  } else {
-    showLoading('Counting students...');
-    readTextOrCSV(file);
-  }
+  const files = Array.from(e.target.files || []); if (!files.length) return;
   e.target.value = '';
+  pipelineReset(); // reset state first
+
+  const ocrFiles = files.filter(f => {
+    const n = (f.name||'').toLowerCase(), t = (f.type||'').toLowerCase();
+    return t.startsWith('image/') || t==='application/pdf'
+        || /\.(jpg|jpeg|png|webp|bmp|heic|heif|pdf)$/.test(n);
+  });
+  const textFiles = files.filter(f => !ocrFiles.includes(f));
+
+  textFiles.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
+
+  if (ocrFiles.length) {
+    const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
+    if (!apiKey) {
+      // No Gemini key — show quick inline prompt with option to proceed with OCR.space
+      pipelineToast('⚠️ No AI key — using basic OCR. Add Gemini key in Settings for 95% accuracy.');
+    }
+    processImagesSequentially(ocrFiles);
+  }
+}
+
+// process multiple images one by one
+async function processImagesSequentially(files) {
+  for (let i = 0; i < files.length; i++) {
+    const ld = document.getElementById('csv-loading');
+    if (ld) ld.textContent = files.length > 1 ? `📸 Reading image ${i+1} of ${files.length}...` : '📸 AI reading register...';
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = async ev => {
+        const imgData = ev.target.result;
+        const base64  = imgData.split(',')[1];
+        const mime    = files[i].type || 'image/jpeg';
+        let text = '';
+        const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+
+        if (navigator.onLine) {
+          if (apiKey) {
+            try {
+              const ld2 = document.getElementById('csv-loading');
+              if(ld2) ld2.textContent = '🤖 Gemini AI reading register...';
+              const bar = document.getElementById('pipe-progress-bar');
+              if(bar) bar.style.width = '40%';
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+              const prompt = `You are scanning a Nigerian school attendance register or class list.
+Extract ONLY the student full names from this image.
+Rules:
+- Output ONE name per line, nothing else
+- Include BOTH surname and first name as written (e.g. OGUNLADE MICHEAL)
+- Common Nigerian surnames: OGUNLADE, KASALI, GBELEKALE, OYESANWO, AKINWANDE, OLAYIDE, ADEOYE, ALAWO, ALIMI, ADEBAYO, OGUNDEYI, KOLAWOLE, ADEGUNLE
+- Common Muslim first names: RASAQ, MUFEEZ, ZAINAB, WASILAT, AMINAT, MUSTEQEEM, IBRAHIM
+- Common Christian names: GODWIN, ELIZABETH, MICHEAL, GABRIEL, CECILIA, DORCAS, DEBORAH
+- Keep HEPHZIBAH, OLUWANMI, OLUWASEUN etc. intact — do NOT split them
+- Skip: serial numbers, class names, dates, headers like NAMES/S/N/CLASS
+- Skip: blank lines, dashes, checkmarks
+Output only names, one per line:`;
+              const body = {
+                contents:[{parts:[{text:prompt},{inlineData:{mimeType:mime,data:base64}}]}],
+                generationConfig:{temperature:0.1,maxOutputTokens:1024}
+              };
+              const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+              const d = await r.json();
+              if(d.error) throw new Error(d.error.message);
+              text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              const bar2 = document.getElementById('pipe-progress-bar');
+              if(bar2) bar2.style.width = '90%';
+            } catch(err) { console.warn('Gemini failed:', err.message); text=''; }
+          }
+
+          if (!text.trim()) {
+            try {
+              const ld2 = document.getElementById('csv-loading');
+              if(ld2) ld2.textContent = '📸 Processing with OCR...';
+              const arr = imgData.split(','); const mtype = arr[0].match(/:(.*?);/)[1];
+              const bstr = atob(arr[1]); let n = bstr.length;
+              const u8 = new Uint8Array(n); while(n--) u8[n]=bstr.charCodeAt(n);
+              const blob = new Blob([u8],{type:mtype});
+              const fd = new FormData();
+              fd.append('file', blob, 'reg.jpg');
+              fd.append('language','eng'); fd.append('apikey','helloworld');
+              fd.append('isHandwritten','true'); fd.append('isTable','true');
+              fd.append('detectOrientation','true');
+              const resp = await fetch('https://api.ocr.space/parse/image',{method:'POST',body:fd});
+              const result = await resp.json();
+              text = result.ParsedResults?.[0]?.ParsedText || '';
+            } catch(e) { console.warn('OCR.space failed:', e); }
+          }
+        }
+
+        if (text.trim()) {
+          const names = extractNamesFromText(text);
+          if (i === files.length - 1) renderCountResult(names);
+          else csvParsedNames.push(...names.map(n=>({name:n,class:null})));
+        } else {
+          await readImageWithTesseract(imgData);
+        }
+        resolve();
+      };
+      reader.onerror = () => { resolve(); };
+      reader.readAsDataURL(files[i]);
+    });
+  }
 }
 
 // Core extraction: joins continuation lines, handles CSV and plain text
@@ -920,148 +1121,3 @@ document.addEventListener('DOMContentLoaded',()=>{
   console.log('🎙️ Bloom Agent Voice ready.');
 })();
 
-
-// ══════════════════════════════════════════════════
-// 4 AI ONBOARDING AGENTS
-// ══════════════════════════════════════════════════
-
-async function callGeminiText(prompt) {
-  const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
-  if (!apiKey) {
-    return '⚠️ No Gemini key set. Go to Settings → 🤖 AI-Powered OCR to add your free key from aistudio.google.com';
-  }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  const body = {
-    contents:[{parts:[{text: prompt}]}],
-    generationConfig:{temperature:0.7, maxOutputTokens:512}
-  };
-  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d = await r.json();
-  if (d.error) throw new Error(d.error.message);
-  return d.candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
-}
-
-function setAIResult(elId, text, loading) {
-  const el = document.getElementById(elId);
-  if (el) el.textContent = text;
-  if (loading) loading.textContent = '';
-}
-
-async function runScoutAI() {
-  const el = document.getElementById('scout-result');
-  if (el) el.textContent = '🤖 Scouting...';
-  try {
-    const result = await callGeminiText(
-      `You are an EduBloom field agent in Nigeria. Give me a practical 5-point checklist for identifying private schools in my area that are ready to adopt a digital management system like EduBloom. 
-      Focus on: visible signs of growth, fee payment problems, attendance tracking pain points, competition from bigger schools nearby, and principal frustration with paperwork.
-      Keep each point to 1 sentence. Use simple Nigerian English. Start each point with an emoji.`
-    );
-    if (el) el.textContent = result;
-  } catch(e) {
-    if (el) el.textContent = '❌ Error: ' + e.message;
-  }
-}
-
-async function runPitchCoachAI() {
-  const type = document.getElementById('pitch-school-type')?.value;
-  const el = document.getElementById('pitch-result');
-  if (!type) { alert('Please select a school type first.'); return; }
-  if (el) el.textContent = '🤖 Writing pitch...';
-  try {
-    const result = await callGeminiText(
-      `You are a sales coach for EduBloom — a Nigerian school management app that costs ₦30,000–₦120,000/term and pays 20% commission to agents.
-      Write a short, convincing 60-second verbal sales pitch for a ${type} in Nigeria.
-      Mention: how it solves their biggest pain (fee collection, attendance, report cards), the price range, and the free demo offer.
-      Use simple, friendly Nigerian English. No bullet points — write it like you're speaking directly to the principal.`
-    );
-    if (el) el.textContent = result;
-  } catch(e) {
-    if (el) el.textContent = '❌ Error: ' + e.message;
-  }
-}
-
-async function runObjectionAI() {
-  const objection = document.getElementById('objection-type')?.value;
-  const el = document.getElementById('objection-result');
-  if (!objection) { alert('Please select an objection first.'); return; }
-  if (el) el.textContent = '🤖 Crafting response...';
-  try {
-    const result = await callGeminiText(
-      `You are a sales trainer for EduBloom, a Nigerian school management app.
-      A school principal just said: "${objection}"
-      Give me a calm, confident 3-sentence response that acknowledges their concern, reframes it, and ends with a soft close (offer a free demo or trial).
-      Use friendly Nigerian English. Be respectful, not pushy.`
-    );
-    if (el) el.textContent = result;
-  } catch(e) {
-    if (el) el.textContent = '❌ Error: ' + e.message;
-  }
-}
-
-async function runFollowupAI() {
-  const scenario = document.getElementById('followup-scenario')?.value;
-  const el = document.getElementById('followup-result');
-  if (!scenario) { alert('Please select a scenario first.'); return; }
-  if (el) el.textContent = '🤖 Writing message...';
-  try {
-    const result = await callGeminiText(
-      `You are an EduBloom agent in Nigeria writing a WhatsApp follow-up message to a school principal.
-      Situation: ${scenario}.
-      Write a short (3–5 lines), friendly, professional WhatsApp message in Nigerian English.
-      Sign off as "Your EduBloom Agent".
-      Do NOT use formal letter format — write it like a real WhatsApp message.`
-    );
-    if (el) el.textContent = result;
-  } catch(e) {
-    if (el) el.textContent = '❌ Error: ' + e.message;
-  }
-}
-
-// ── Agent App Settings: Gemini key ────────────────────────────────────────
-function loadAgentGeminiKey() {
-  const saved = localStorage.getItem('gemini_api_key') || '';
-  const inp = document.getElementById('ag-gemini-key');
-  const status = document.getElementById('ag-gemini-status');
-  if (inp) inp.value = saved;
-  if (status) {
-    status.textContent = saved
-      ? '✅ AI OCR active — register scanning + AI agents use Gemini'
-      : '⚠️ No key — OCR.space used for scanning, AI agents unavailable';
-    status.style.color = saved ? '#22c55e' : '#f59e0b';
-  }
-}
-
-function saveAgentGeminiKey() {
-  const inp = document.getElementById('ag-gemini-key');
-  const key = (inp?.value || '').trim();
-  if (key && !key.startsWith('AIza') && !key.startsWith('AQ.')) {
-    alert('Invalid key format. Should start with AIzaSy...');
-    return;
-  }
-  if (key) {
-    localStorage.setItem('gemini_api_key', key);
-    window.GEMINI_API_KEY = key;
-    alert('✅ Gemini key saved! AI agents and OCR are now active.');
-  } else {
-    localStorage.removeItem('gemini_api_key');
-    window.GEMINI_API_KEY = '';
-  }
-  loadAgentGeminiKey();
-}
-
-function clearAgentGeminiKey() {
-  localStorage.removeItem('gemini_api_key');
-  window.GEMINI_API_KEY = '';
-  const inp = document.getElementById('ag-gemini-key'); if(inp) inp.value = '';
-  loadAgentGeminiKey();
-}
-
-// Load key status on page load
-document.addEventListener('DOMContentLoaded', () => {
-  // Restore key from localStorage into window context
-  const saved = localStorage.getItem('gemini_api_key');
-  if (saved) window.GEMINI_API_KEY = saved;
-  loadAgentGeminiKey();
-});
-
-function goTab(tab) { go(tab); }
