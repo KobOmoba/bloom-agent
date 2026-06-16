@@ -229,6 +229,16 @@ function updateCommission(){
   $('comm-total').textContent=`Total school pays: ${fmt(total)} for ${terms} term${terms>1?'s':''}`;
 }
 
+
+// Real connectivity test — navigator.onLine lies on Android (WiFi with no internet)
+async function realOnline() {
+  if (!navigator.onLine) return false;
+  try {
+    await fetch('https://firestore.googleapis.com/', { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(3000) });
+    return true;
+  } catch { return false; }
+}
+
 async function submitDeal(){
   const name=$('s-name').value.trim();
   const phone=$('s-phone').value.trim().replace(/\D/g,'');
@@ -257,9 +267,10 @@ async function submitDeal(){
   };
 
   try{
-    if(db&&navigator.onLine){ await db.collection('admin_deals').add(deal); }
+    const online = await realOnline();
+    if(db && online){ await db.collection('admin_deals').add(deal); }
     else{ SQ.push({t:'deal',d:deal}); }
-    showFB(fb,'ok',`✅ "${name}" submitted! ${navigator.onLine?'':'(Saved offline — will reach Bayo when internet returns.) '}Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
+    showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
     pipelineReset();
     // ✅ Command center stays in control — no direct principal contact from agent app.
     // Bayo reviews the deal, generates school code, and sends the onboarding link.
@@ -273,8 +284,14 @@ async function submitDeal(){
   }catch(e){
     // Write failed — queue it so the deal is never lost
     SQ.push({t:'deal',d:deal});
-    showFB(fb,'ok',`📥 "${name}" saved offline — will reach Bayo when connection returns.`);
-    console.warn('submitDeal write failed, queued:', e?.message);
+    const errMsg = e?.message || '';
+    const isPermission = errMsg.toLowerCase().includes('permission') || errMsg.includes('PERMISSION_DENIED');
+    if (isPermission) {
+      showFB(fb,'bad',`⚠️ Submission blocked by server (permission error). Contact Bayo — your deal is saved locally and will retry.`);
+    } else {
+      showFB(fb,'ok',`📥 "${name}" saved offline — will reach Bayo when connection returns.`);
+    }
+    console.warn('submitDeal write failed:', e?.message, e?.code);
   }
   btn.textContent='📤 Submit to Bayo'; btn.disabled=false;
 }
