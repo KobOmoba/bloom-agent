@@ -1147,9 +1147,10 @@ async function processImagesSequentially(files) {
     if (fbEl) fbEl.textContent = '❌ Could not read any names. Try a clearer, well-lit photo.';
     return;
   }
-  const existingKeys = new Set(SD.students.map(s => s.name.toLowerCase().replace(/[^a-z]/g, '')));
+  // Agent app: de-duplicate against already-parsed names this session only
+  const existingKeys = new Set((csvParsedNames||[]).map(s => (s.name||'').toLowerCase().replace(/[^a-z]/g, '')));
   _ocrPending = _ocrPending.filter(n => {
-    const key = (n.fullName || '').toLowerCase().replace(/[^a-z]/g, '');
+    const key = (n.fullName || n.surname || '').toLowerCase().replace(/[^a-z]/g, '');
     return key.length > 1 && !existingKeys.has(key);
   });
   const totalFound = _ocrPending.length;
@@ -1183,7 +1184,7 @@ function ocrShowReview(names) {
   // Populate the "Set class for ALL" dropdown from existing class arms
   const classDropdown = $('ocr-class-all');
   if (classDropdown) {
-    const arms = [...new Set((SD.students||[]).map(s=>s.class||'').filter(Boolean))].sort();
+    const arms = [...new Set((csvParsedNames||[]).map(s=>s.class||'').filter(Boolean))].sort();
     // Also include common Nigerian class names as defaults
     const defaults = ['JSS1A','JSS1B','JSS2A','JSS2B','JSS3A','JSS3B','SS1A','SS1B','SS2A','SS2B','SS3A','SS3B'];
     const allArms  = [...new Set([...arms, ...defaults])];
