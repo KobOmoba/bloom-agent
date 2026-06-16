@@ -549,12 +549,9 @@ function handleRegisterCSV(e) {
   csvOnly.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
 
   if (ocrFiles.length) {
-    const apiKey = getGeminiKey();
-    if (!apiKey) {
-      showGeminiKeyPrompt(() => processImagesSequentially(ocrFiles));
-    } else {
-      processImagesSequentially(ocrFiles);
-    }
+    // Always scan immediately — Gemini used if key exists, OCR.space as fallback.
+    // No blocking modal — agent should never hit a dead end.
+    processImagesSequentially(ocrFiles);
   }
 }
 
