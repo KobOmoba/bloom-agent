@@ -197,6 +197,7 @@ function go(tab){
   if(btn) btn.classList.add('on');
   if(tab==='deals') renderDeals();
   if(tab==='earnings') renderEarnings();
+  if(tab==='settings') renderSettingsProfile();
 }
 
 // ── Submit Deal ────────────────────────────────────────────────────────────
@@ -1242,5 +1243,205 @@ function readTextOrCSV(file) {
   };
   reader.onerror = () => alert('Could not read file.');
   reader.readAsText(file);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// AI ONBOARDING AGENTS — Gemini-powered, with static fallback
+// ═══════════════════════════════════════════════════════════════════
+
+async function callGemini(prompt) {
+  const key = getGeminiKey();
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ contents:[{ parts:[{ text: prompt }] }] }) }
+    );
+    const j = await res.json();
+    return j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+  } catch(e) { return null; }
+}
+
+// ── 1. School Scout AI ──
+async function runScoutAI() {
+  const el = document.getElementById('scout-result');
+  const btn = document.querySelector('[onclick="runScoutAI()"]');
+  if (!el) return;
+  el.innerHTML = '<span style="color:#818cf8;">🔍 Scouting your area...</span>';
+  if (btn) { btn.disabled = true; btn.textContent = 'Scouting...'; }
+
+  const agentArea = agent?.area || agent?.state || 'Nigeria';
+  const prompt = `You are an EduTech sales expert in Nigeria. An EduBloom agent is based in ${agentArea}.
+
+EduBloom is a school management suite (fees, attendance, report cards, timetable) that costs schools ₦10,000–₦60,000/term based on student count. Schools pay per term, agent earns 20% commission.
+
+Give 5 specific actionable tips for this agent to find and approach private primary/secondary schools in their area. Be brief, practical, and Nigeria-specific. Format as a numbered list. Max 150 words.`;
+
+  const result = await callGemini(prompt);
+  if (result) {
+    el.innerHTML = result.replace(/\n/g, '<br>');
+  } else {
+    el.innerHTML = `<strong>No AI key set.</strong> Add your Gemini key in <span style="color:#818cf8;cursor:pointer;text-decoration:underline;" onclick="go('settings')">Settings</span> for live scouting tips.<br><br>
+<strong>Quick tips for ${agentArea}:</strong><br>
+1. Visit private school clusters near churches/mosques on Saturday mornings<br>
+2. Ask PTA members to refer you to other school principals<br>
+3. Focus on schools with 50–150 students — easiest to close<br>
+4. Drop off a physical flyer with your WhatsApp number<br>
+5. Follow up 3× before moving on — principals are busy`;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Scout My Area'; }
+}
+
+// ── 2. Pitch Coach AI ──
+async function runPitchCoachAI() {
+  const el = document.getElementById('pitch-result');
+  const btn = document.querySelector('[onclick="runPitchCoachAI()"]');
+  const type = document.getElementById('pitch-school-type')?.value || 'private primary';
+  if (!el) return;
+  el.innerHTML = '<span style="color:#059669;">🎯 Writing your pitch...</span>';
+  if (btn) { btn.disabled = true; btn.textContent = 'Writing...'; }
+
+  const prompt = `You are a sales coach for EduBloom — a Nigerian school management app (fees, attendance, report cards).
+
+Write a short, persuasive WhatsApp-style pitch for a sales agent visiting a ${type} school in Nigeria.
+- Keep it under 100 words
+- Start with a pain point the school actually has
+- Mention ONE key benefit relevant to this school type
+- End with a soft call to action (not a hard sell)
+- Write it as a ready-to-say script (first person, agent speaking to principal)
+- Use natural Nigerian business English`;
+
+  const result = await callGemini(prompt);
+  if (result) {
+    el.innerHTML = '<div style="background:rgba(5,150,105,0.08);border:1px solid rgba(5,150,105,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;">' + result.replace(/\n/g,'<br>') + '</div>';
+  } else {
+    const pitches = {
+      'private primary': '"Good morning sir/ma. I noticed your school handles fees manually — we have a lot of schools losing money to unrecorded payments. EduBloom automatically tracks every payment and sends parents receipts. It takes 2 minutes to set up. Can I show you how it works on my phone?"',
+      'private secondary': '"Good morning. Most secondary schools I visit are still writing report cards by hand — it takes weeks. EduBloom generates all report cards in one click, including class teacher and principal comments. May I show you a demo?"',
+      'public school': '"Good morning. EduBloom is free for public schools under our government partnership tier. It handles attendance and reports digitally. I just need 5 minutes of your time."'
+    };
+    el.innerHTML = '<div style="background:rgba(5,150,105,0.08);border:1px solid rgba(5,150,105,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;">' +
+      (pitches[type] || pitches['private primary']) + '<br><br><small style="color:var(--sub);">Add Gemini key in Settings for a personalised pitch.</small></div>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🎯 Generate Pitch'; }
+}
+
+// ── 3. Objection Handler AI ──
+async function runObjectionAI() {
+  const el = document.getElementById('objection-result');
+  const btn = document.querySelector('[onclick="runObjectionAI()"]');
+  const obj = document.getElementById('objection-type')?.value || '';
+  if (!el || !obj) { if(el) el.innerHTML = '<span style="color:#f59e0b;">Select an objection first.</span>'; return; }
+  el.innerHTML = '<span style="color:#d97706;">🛡️ Crafting response...</span>';
+  if (btn) { btn.disabled = true; btn.textContent = 'Thinking...'; }
+
+  const prompt = `You are a sales coach for EduBloom, a Nigerian school management app.
+
+A school principal says: "${obj}"
+
+Write a SHORT, confident, empathetic response the agent should say. 
+- Max 60 words
+- Acknowledge the concern first
+- Give one specific counter-point
+- Keep the door open
+- Natural Nigerian business tone
+- No bullet points — write as dialogue`;
+
+  const result = await callGemini(prompt);
+  if (result) {
+    el.innerHTML = '<div style="background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;">' + result.replace(/\n/g,'<br>') + '</div>';
+  } else {
+    const responses = {
+      "We don't have budget right now": "Understood, sir. That's why EduBloom starts from just ₦10,000 per term — that's ₦3,300 a month, less than one teacher's transport. And it saves you at least that in admin time every week.",
+      "We already use another system": "That's great — which one? Most schools I meet use spreadsheets or paper alongside their 'system'. EduBloom brings everything — fees, attendance, reports — into one place on any phone.",
+      "The teachers won't learn it": "I hear that a lot! Our app was built for Nigerian teachers specifically. No training needed — if you can use WhatsApp, you can use EduBloom. I can show you in 3 minutes.",
+      "We need to think about it": "Of course, take your time. Can I leave you with a one-page summary? I'll follow up next Tuesday — if it's not a fit, no problem at all.",
+      "It's too expensive": "I understand. Let's calculate it together — how many students do you have? For most schools it works out to less than ₦200 per student per term. That's usually less than one lesson note printout."
+    };
+    el.innerHTML = '<div style="background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;">' +
+      (responses[obj] || "I understand your concern. Let me address that directly — EduBloom has helped over 50 Nigerian schools solve exactly this issue. Can I show you one example?") +
+      '<br><br><small style="color:var(--sub);">Add Gemini key in Settings for AI-personalised responses.</small></div>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🛡️ Handle This'; }
+}
+
+// ── 4. Follow-up Writer AI ──
+async function runFollowupAI() {
+  const el = document.getElementById('followup-result');
+  const btn = document.querySelector('[onclick="runFollowupAI()"]');
+  const scenario = document.getElementById('followup-scenario')?.value || '';
+  if (!el || !scenario) { if(el) el.innerHTML = '<span style="color:#f59e0b;">Select a scenario first.</span>'; return; }
+  el.innerHTML = '<span style="color:#dc2626;">📲 Writing message...</span>';
+  if (btn) { btn.disabled = true; btn.textContent = 'Writing...'; }
+
+  const agentName = agent?.name || 'your EduBloom agent';
+  const prompt = `You are helping a Nigerian EduBloom sales agent write a WhatsApp follow-up message to a school principal.
+
+Scenario: ${scenario}
+Agent name: ${agentName}
+
+Write a short WhatsApp message (max 60 words). Requirements:
+- Warm and professional Nigerian tone
+- Reference EduBloom naturally
+- Clear next step or soft CTA
+- Ready to send as-is (no placeholders like [name])
+- Use "sir/ma" appropriately
+- Do NOT start with "Dear" — start conversationally`;
+
+  const result = await callGemini(prompt);
+  if (result) {
+    el.innerHTML = '<div style="background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;font-family:monospace;font-size:0.82rem;">' +
+      result.replace(/\n/g,'<br>') +
+      '<br><br><button onclick="copyFollowup(this)" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:0.4rem 0.8rem;font-size:0.78rem;cursor:pointer;margin-top:0.3rem;">📋 Copy</button></div>';
+  } else {
+    const msgs = {
+      "After first visit — no commitment": `Good morning sir/ma. It was great visiting ${agent?.name ? "you" : "your school"} yesterday. I wanted to share one quick thing — EduBloom can have your fee records fully automated before next term. Would tomorrow work for a 5-minute demo? 🙏`,
+      "After demo — went cold": "Good morning sir/ma. Just checking in — I know it's a busy period. EduBloom's early-bird offer for new schools ends this Friday. I'd hate for you to miss it. Should I come by this week? 🌸",
+      "After sending proposal — no reply": "Good morning sir/ma. Sent across the EduBloom proposal last week — just wanted to confirm you received it. Happy to walk you through the numbers at your convenience. What day works best?",
+      "Principal asked to call back later": "Good morning sir/ma. You mentioned I should follow up this week — just checking in about EduBloom for your school. Is there a good time to call or visit today? 🙏"
+    };
+    el.innerHTML = '<div style="background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);border-radius:9px;padding:0.75rem;line-height:1.7;font-family:monospace;font-size:0.82rem;">' +
+      (msgs[scenario] || msgs["After first visit — no commitment"]) +
+      '<br><br><button onclick="copyFollowup(this)" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:0.4rem 0.8rem;font-size:0.78rem;cursor:pointer;margin-top:0.3rem;">📋 Copy</button>' +
+      '<br><small style="color:var(--sub);">Add Gemini key in Settings for personalised messages.</small></div>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '📲 Write Message'; }
+}
+
+function copyFollowup(btn) {
+  const txt = btn.closest('div').textContent.replace('📋 Copy','').replace('Add Gemini key in Settings for personalised messages.','').trim();
+  navigator.clipboard.writeText(txt).then(() => { btn.textContent = '✅ Copied!'; setTimeout(()=>btn.textContent='📋 Copy',2000); });
+}
+
+// ── Settings helpers ──
+function saveSettingsKey() {
+  const inp = document.getElementById('settings-gemini-key');
+  const st  = document.getElementById('settings-key-status');
+  const key = (inp?.value || '').trim();
+  if (!key.startsWith('AIza') || key.length < 30) {
+    if (st) { st.textContent = '❌ Invalid key — should start with AIza...'; st.style.color='#f87171'; st.style.display='block'; }
+    return;
+  }
+  localStorage.setItem('gemini_api_key', key);
+  window.GEMINI_API_KEY = key;
+  if (inp) inp.value = key.slice(0,6) + '••••••••••••••••••••••••••••••••';
+  if (st) { st.textContent = '✅ Key saved! AI agents & OCR are now active.'; st.style.color='#34d399'; st.style.display='block'; }
+}
+
+function renderSettingsProfile() {
+  const el = document.getElementById('settings-profile');
+  if (!el || !agent) return;
+  el.innerHTML = `
+    <div>👤 <strong>${agent.name || 'Agent'}</strong></div>
+    <div>📱 ${agent.phone || '—'}</div>
+    <div>📍 ${agent.area || agent.state || 'Nigeria'}</div>
+    <div>💰 Commission: <strong style="color:#fbbf24;">${agent.commissionRate || 20}%</strong></div>
+  `;
+  // Pre-fill key if already saved
+  const saved = getGeminiKey();
+  const inp = document.getElementById('settings-gemini-key');
+  if (inp && saved) inp.value = saved.slice(0,6) + '••••••••••••••••••••••••••••••••';
 }
 
