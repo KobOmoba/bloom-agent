@@ -240,6 +240,8 @@ async function realOnline() {
 }
 
 async function submitDeal(){
+  if(window._dealSubmitting){ return; }  // prevent double-tap
+  window._dealSubmitting = true;
   const name=$('s-name').value.trim();
   const phone=$('s-phone').value.trim().replace(/\D/g,'');
   const email=$('s-email').value.trim();
@@ -268,9 +270,20 @@ async function submitDeal(){
 
   try{
     const online = await realOnline();
-    if(db && online){ await db.collection('admin_deals').add(deal); }
+    if(db && online){
+      // Dedup check: block identical pending deal within 30 seconds
+      const recent = await db.collection('admin_deals')
+        .where('school.name','==',name)
+        .where('school.phone','==',phone)
+        .where('status','==','pending')
+        .orderBy('timestamp','desc').limit(1).get();
+      const thirtySecsAgo = new Date(Date.now() - 30000);
+      const isDup = !recent.empty && recent.docs[0].data().timestamp?.toDate?.() > thirtySecsAgo;
+      if(isDup){ showFB(fb,'bad','⚠️ This school was just submitted. Please wait before re-submitting.'); btn.textContent='🚀 Submit Deal'; btn.disabled=false; window._dealSubmitting=false; return; }
+      await db.collection('admin_deals').add(deal);
+    }
     else{ SQ.push({t:'deal',d:deal}); }
-    showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
+    window._dealSubmitting=false; showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
     pipelineReset();
     // ✅ Command center stays in control — no direct principal contact from agent app.
     // Bayo reviews the deal, generates school code, and sends the onboarding link.
