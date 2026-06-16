@@ -1170,15 +1170,17 @@ async function processImagesSequentially(files) {
   // Hide overlay after brief success pause, then open review
   setTimeout(() => {
     ocrOverlayHide(0);
-    // Agent app: feed names into renderCountResult (the pipeline count display)
     // Convert structured {surname, firstname, fullName} objects to plain name strings
     const nameStrings = _ocrPending.map(function(n) {
       const sur = (n.surname   || '').trim().toUpperCase();
       const fst = (n.firstname || '').trim().toUpperCase();
       return fst ? (sur + ' ' + fst) : (n.fullName || sur);
     }).filter(function(n) { return n.trim().length > 1; });
+
     if (nameStrings.length) {
       renderCountResult(nameStrings);
+      // Open the review modal with structured names so user can edit & add students
+      ocrShowReview(_ocrPending);
     } else {
       const fbEl = document.getElementById('csv-loading') || document.getElementById('pipe-step-label');
       if (fbEl) fbEl.textContent = '❌ No names found. Try a clearer, well-lit photo.';
@@ -1191,6 +1193,47 @@ async function processImagesSequentially(files) {
     const ld = document.getElementById('csv-loading');
     if (ld) { ld.style.display='block'; ld.textContent='❌ Error: ' + err.message; }
     alert('Scanning failed: ' + err.message + '\n\nTry a clearer photo.');
+  }
+}
+
+
+function ocrConfirmImport() {
+  const rows = document.querySelectorAll('#ocr-review-list .ocr-row');
+  const approved = [];
+  rows.forEach(function(row) {
+    const idx  = row.id.replace('ocr-row-','');
+    const chk  = document.getElementById('ocr-chk-' + idx);
+    if (!chk || !chk.checked) return;
+    const sur  = (document.getElementById('ocr-sur-' + idx)?.value || '').trim().toUpperCase();
+    const fst  = (document.getElementById('ocr-fst-' + idx)?.value || '').trim().toUpperCase();
+    const cls  = (document.getElementById('ocr-cls-' + idx)?.value || '').trim().toUpperCase();
+    const full = sur && fst ? (sur + ' ' + fst) : (sur || fst);
+    if (full.length > 1) approved.push({ name: full, surname: sur, firstname: fst, class: cls || null });
+  });
+
+  if (!approved.length) {
+    alert('No students selected. Tick at least one name.');
+    return;
+  }
+
+  closeM('ocr-review-modal');
+
+  // Feed into agent pipeline as plain name strings for count + tier display
+  const nameStrings = approved.map(function(s) { return s.name; });
+  renderCountResult(nameStrings);
+
+  // Also store structured data for submission
+  csvParsedNames = approved;
+  csvStudentCount = approved.length;
+  pipelineToast('✅ ' + approved.length + ' students added — fill school details below.');
+
+  // Scroll to school name field
+  const nameField = document.getElementById('s-name');
+  if (nameField) {
+    setTimeout(function() {
+      nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      nameField.focus();
+    }, 300);
   }
 }
 
