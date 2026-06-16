@@ -546,7 +546,7 @@ function handleRegisterCSV(e) {
   textFiles.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
 
   if (ocrFiles.length) {
-    const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+    const apiKey = getGeminiKey();
     if (!apiKey) {
       showGeminiKeyPrompt(() => processImagesSequentially(ocrFiles));
     } else {
@@ -564,6 +564,8 @@ function handleRegisterCSV(e) {
 // ── Gemini Flash OCR (Structured Outputs) — PRIMARY OCR ──────────────────
 // Key stored encoded; managed via AariNAT Command Center Settings
 const GEMINI_KEY  = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';  // Set via settings or key prompt
+// Live key getter — always reads current value even if key was saved after page load
+function getGeminiKey() { return window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY || ''; }
 const GEMINI_MODELS = ['gemini-2.0-flash','gemini-2.0-flash-exp','gemini-1.5-flash','gemini-1.5-flash-latest'];
 
 const GEMINI_PROMPT = `You are reading a Nigerian primary/secondary school fee register.
@@ -606,7 +608,7 @@ const GEMINI_SCHEMA = {
 
 async function geminiOCR(base64, mime) {
   // Re-read key at call time (may have been set via the key prompt after page load)
-  const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+  const apiKey = getGeminiKey();
   if (!apiKey) throw new Error('No Gemini key set — skipping to fallback');
   let lastError = null;
   for (const model of GEMINI_MODELS) {
@@ -741,7 +743,7 @@ async function _readOnePage(file, pageNum, total, fbEl) {
       ocrOverlayPages(pageNum, total);
 
       // ── 1. Gemini (only when key is configured) ────────────────────────
-      if (GEMINI_KEY) {
+      if (getGeminiKey()) {
         try {
           ocrOverlayStep('upload', 'Sending to Gemini AI...', 35);
           const names = await geminiOCR(b64, mime);
