@@ -538,13 +538,15 @@ function handleRegisterCSV(e) {
   e.target.value = '';
   pipelineReset();
 
-  const ocrFiles = files.filter(f => {
+  // Treat ALL files as potential register images — camera photos from Android/iOS
+  // frequently arrive with type="" or application/octet-stream (no MIME type)
+  // so we NEVER route them to readTextOrCSV (which reads as text and gets binary garbage)
+  const csvOnly = files.filter(f => {
     const n = (f.name||'').toLowerCase(), t = (f.type||'').toLowerCase();
-    return t.startsWith('image/') || t === 'application/pdf'
-        || /\.(jpg|jpeg|png|webp|bmp|heic|heif|pdf)$/.test(n);
+    return t === 'text/csv' || t === 'text/plain' || /\.csv$/.test(n) || /\.txt$/.test(n);
   });
-  const textFiles = files.filter(f => !ocrFiles.includes(f));
-  textFiles.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
+  const ocrFiles = files.filter(f => !csvOnly.includes(f));
+  csvOnly.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
 
   if (ocrFiles.length) {
     const apiKey = getGeminiKey();
@@ -736,7 +738,11 @@ async function _readOnePage(file, pageNum, total, fbEl) {
     reader.onload = async ev => {
       const imgData = ev.target.result;   // full data URI
       const b64    = imgData.split(',')[1];
-      const mime   = file.type || 'image/jpeg';
+      // Force valid MIME — Android camera photos often arrive with type=""
+      let mime = file.type || '';
+      if (!mime || mime === 'application/octet-stream' || mime === 'application/unknown') {
+        mime = 'image/jpeg'; // safe default for camera photos
+      }
 
       // Show thumbnail in overlay
       ocrOverlayThumb(imgData);
@@ -1124,6 +1130,11 @@ let _ocrPending = [];
 async function processImagesSequentially(files) {
   const fbEl = $('csv-fb'); _ocrPending = [];
 
+  // IMMEDIATELY show processing state in pipeline UI
+  showLoading('📸 AI reading register...');
+
+  try {
+
   // Show the upload overlay for the first file
   if (files.length > 0) {
     const firstName = files[0].name || 'image';
@@ -1144,7 +1155,10 @@ async function processImagesSequentially(files) {
 
   if (!_ocrPending.length) {
     ocrOverlayHide(2000);
-    if (fbEl) fbEl.textContent = '❌ Could not read any names. Try a clearer, well-lit photo.';
+    pipelineReset();
+    if (fbEl) fbEl.textContent = '❌ No names found. Try a clearer photo with good lighting.';
+    const ld = document.getElementById('csv-loading');
+    if (ld) { ld.style.display = 'block'; ld.textContent = '❌ No names found. Try a clearer photo.'; }
     return;
   }
   // Agent app: de-duplicate against already-parsed names this session only
@@ -1173,6 +1187,14 @@ async function processImagesSequentially(files) {
       if (fbEl) fbEl.textContent = '❌ No names found. Try a clearer, well-lit photo.';
     }
   }, 900);
+  } catch (err) {
+    console.error('processImagesSequentially error:', err);
+    ocrOverlayHide(0);
+    pipelineReset();
+    const ld = document.getElementById('csv-loading');
+    if (ld) { ld.style.display='block'; ld.textContent='❌ Error: ' + err.message; }
+    alert('Scanning failed: ' + err.message + '\n\nTry a clearer photo.');
+  }
 }
 
 function ocrShowReview(names) {
