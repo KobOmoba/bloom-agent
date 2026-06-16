@@ -259,20 +259,10 @@ async function submitDeal(){
     if(db&&navigator.onLine){ await db.collection('admin_deals').add(deal); }
     else{ SQ.push({t:'deal',d:deal}); }
     showFB(fb,'ok',`✅ "${name}" submitted! ${navigator.onLine?'':'(Saved offline — will reach Bayo when internet returns.) '}Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
-    // Send WhatsApp onboarding link to principal if phone available
-    if (phone && deal.scannedCount > 0) {
-      const schoolUrl = encodeURIComponent(`https://school.edubloom.com.ng`);
-      const msg = encodeURIComponent(
-        `Hello, this is EduBloom 🌸\n\nYour school has been registered with *${deal.scannedCount} students* already loaded!\n\nClick to complete your school setup in 2 minutes:\nhttps://school.edubloom.com.ng\n\nYour setup code will be provided by your agent.`
-      );
-      const waLink = `https://wa.me/${phone}?text=${msg}`;
-      // Show as a tap-to-send button (agent must tap, not auto-send)
-      const fb2 = document.createElement('div');
-      fb2.style.cssText='margin-top:0.6rem;';
-      fb2.innerHTML = `<a href="${waLink}" target="_blank" style="display:block;background:#25d366;color:#fff;text-align:center;padding:0.7rem;border-radius:10px;font-weight:700;font-size:0.85rem;text-decoration:none;">📲 Send Onboarding Link to Principal</a>`;
-      fb.parentNode.insertBefore(fb2, fb.nextSibling);
-    }
     pipelineReset();
+    // ✅ Command center stays in control — no direct principal contact from agent app.
+    // Bayo reviews the deal, generates school code, and sends the onboarding link.
+    // Agent's job is done at submission.
     // Reset form
 	['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
     $('s-terms').value='1';
