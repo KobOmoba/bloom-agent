@@ -535,165 +535,707 @@ function pipelineToast(msg) {
 function handleRegisterCSV(e) {
   const files = Array.from(e.target.files || []); if (!files.length) return;
   e.target.value = '';
-  pipelineReset(); // reset state first
+  pipelineReset();
 
   const ocrFiles = files.filter(f => {
     const n = (f.name||'').toLowerCase(), t = (f.type||'').toLowerCase();
-    return t.startsWith('image/') || t==='application/pdf'
+    return t.startsWith('image/') || t === 'application/pdf'
         || /\.(jpg|jpeg|png|webp|bmp|heic|heif|pdf)$/.test(n);
   });
   const textFiles = files.filter(f => !ocrFiles.includes(f));
-
   textFiles.forEach(f => { showLoading('📄 Reading file...'); readTextOrCSV(f); });
 
   if (ocrFiles.length) {
-    const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
+    const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
     if (!apiKey) {
-      // No Gemini key — show quick inline prompt with option to proceed with OCR.space
-      pipelineToast('⚠️ No AI key — using basic OCR. Add Gemini key in Settings for 95% accuracy.');
-    }
-    processImagesSequentially(ocrFiles);
-  }
-}
-
-// process multiple images one by one
-async function processImagesSequentially(files) {
-  for (let i = 0; i < files.length; i++) {
-    const ld = document.getElementById('csv-loading');
-    if (ld) ld.textContent = files.length > 1 ? `📸 Reading image ${i+1} of ${files.length}...` : '📸 AI reading register...';
-    await new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = async ev => {
-        const imgData = ev.target.result;
-        const base64  = imgData.split(',')[1];
-        const mime    = files[i].type || 'image/jpeg';
-        let text = '';
-        const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
-
-        if (navigator.onLine) {
-          if (apiKey) {
-            try {
-              const ld2 = document.getElementById('csv-loading');
-              if(ld2) ld2.textContent = '🤖 Gemini AI reading register...';
-              const bar = document.getElementById('pipe-progress-bar');
-              if(bar) bar.style.width = '40%';
-              const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-              const prompt = `You are scanning a Nigerian school attendance register or class list.
-Extract ONLY the student full names from this image.
-Rules:
-- Output ONE name per line, nothing else
-- Include BOTH surname and first name as written (e.g. OGUNLADE MICHEAL)
-- Common Nigerian surnames: OGUNLADE, KASALI, GBELEKALE, OYESANWO, AKINWANDE, OLAYIDE, ADEOYE, ALAWO, ALIMI, ADEBAYO, OGUNDEYI, KOLAWOLE, ADEGUNLE
-- Common Muslim first names: RASAQ, MUFEEZ, ZAINAB, WASILAT, AMINAT, MUSTEQEEM, IBRAHIM
-- Common Christian names: GODWIN, ELIZABETH, MICHEAL, GABRIEL, CECILIA, DORCAS, DEBORAH
-- Keep HEPHZIBAH, OLUWANMI, OLUWASEUN etc. intact — do NOT split them
-- Skip: serial numbers, class names, dates, headers like NAMES/S/N/CLASS
-- Skip: blank lines, dashes, checkmarks
-Output only names, one per line:`;
-              const body = {
-                contents:[{parts:[{text:prompt},{inlineData:{mimeType:mime,data:base64}}]}],
-                generationConfig:{temperature:0.1,maxOutputTokens:1024}
-              };
-              const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-              const d = await r.json();
-              if(d.error) throw new Error(d.error.message);
-              text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              const bar2 = document.getElementById('pipe-progress-bar');
-              if(bar2) bar2.style.width = '90%';
-            } catch(err) { console.warn('Gemini failed:', err.message); text=''; }
-          }
-
-          if (!text.trim()) {
-            try {
-              const ld2 = document.getElementById('csv-loading');
-              if(ld2) ld2.textContent = '📸 Processing with OCR...';
-              const arr = imgData.split(','); const mtype = arr[0].match(/:(.*?);/)[1];
-              const bstr = atob(arr[1]); let n = bstr.length;
-              const u8 = new Uint8Array(n); while(n--) u8[n]=bstr.charCodeAt(n);
-              const blob = new Blob([u8],{type:mtype});
-              const fd = new FormData();
-              fd.append('file', blob, 'reg.jpg');
-              fd.append('language','eng'); fd.append('apikey','helloworld');
-              fd.append('isHandwritten','true'); fd.append('isTable','true');
-              fd.append('detectOrientation','true');
-              const resp = await fetch('https://api.ocr.space/parse/image',{method:'POST',body:fd});
-              const result = await resp.json();
-              text = result.ParsedResults?.[0]?.ParsedText || '';
-            } catch(e) { console.warn('OCR.space failed:', e); }
-          }
-        }
-
-        if (text.trim()) {
-          const names = extractNamesFromText(text);
-          if (i === files.length - 1) renderCountResult(names);
-          else csvParsedNames.push(...names.map(n=>({name:n,class:null})));
-        } else {
-          await readImageWithTesseract(imgData);
-        }
-        resolve();
-      };
-      reader.onerror = () => { resolve(); };
-      reader.readAsDataURL(files[i]);
-    });
-  }
-}
-
-// Core extraction: joins continuation lines, handles CSV and plain text
-// A "continuation line" is a line that does NOT start with a number or bullet
-// — meaning it is the second line of a wrapped name like "Abiodun\nKogbodoku"
-function extractNamesFromText(raw) {
-  const rawLines = raw.split(/\r?\n/);
-  const names = [];
-
-  // Step 1: join continuation lines with the previous numbered/bulleted line
-  const joined = [];
-  let current = null;
-
-  rawLines.forEach(line => {
-    const t = line.trim();
-    if (!t) {
-      // blank line ends current entry
-      if (current !== null) { joined.push(current); current = null; }
-      return;
-    }
-    // Is this a CSV line? (contains comma — treat each col0 independently)
-    if (t.includes(',') && !isNumberedLine(t) && !isBulletLine(t)) {
-      if (current !== null) { joined.push(current); current = null; }
-      joined.push(t.split(',')[0].replace(/"/g,'').trim());
-      return;
-    }
-    if (isNumberedLine(t) || isBulletLine(t)) {
-      // New numbered entry — save previous
-      if (current !== null) joined.push(current);
-      current = t;
+      showGeminiKeyPrompt(() => processImagesSequentially(ocrFiles));
     } else {
-      if (current !== null) {
-        // Continuation of previous — append if it looks like more of a name
-        // Only join if continuation line has no numbers and looks like word(s)
-        const words = t.replace(/[^a-zA-Z\s]/g,'').trim();
-        if (words.length > 1 && t.length < 40) {
-          current = current + ' ' + t;
-        } else {
-          // Not a continuation — save current and start fresh
-          joined.push(current);
-          current = t;
-        }
-      } else {
-        // No current entry — treat as standalone line (plain list without numbers)
-        current = t;
+      processImagesSequentially(ocrFiles);
+    }
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+// OCR ENGINE — identical to school.edubloom.com.ng
+// Gemini Vision (primary) → OCR.space (fallback)
+// ═══════════════════════════════════════════════════════
+
+// ── Gemini Flash OCR (Structured Outputs) — PRIMARY OCR ──────────────────
+// Key stored encoded; managed via AariNAT Command Center Settings
+const GEMINI_KEY  = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';  // Set via settings or key prompt
+const GEMINI_MODELS = ['gemini-2.0-flash','gemini-2.0-flash-exp','gemini-1.5-flash','gemini-1.5-flash-latest'];
+
+const GEMINI_PROMPT = `You are reading a Nigerian primary/secondary school fee register.
+The register has columns: SERIAL NO | SURNAME | FIRST NAME | (fee columns).
+The image may be rotated — read it in any orientation.
+
+Your job: extract EVERY student's name as SURNAME + FIRSTNAME pairs.
+
+Nigerian name examples from this type of school:
+- Surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE, OLAWALE, ODEREYE, AKINDELE, ADEBAYO, AYANRINDE, SHONPE, OLATUNDE, GBELEKALE, FAFIOLU, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, SABIU, JOHN, LAWAL, OLOOТУ, AYOMIDE, OGUNSOLA, OLOWU, AFOLAБИ, IYELABOYE, OKEIOLUНMI, OBASA
+- Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL, ADEMIDE, AMIDAT, WIQUYAT, ISREAL, DORCAS, MARYAM, MUSTEQEEM, AMINAT, CYNTHIA, ELIZABETH, TIRESIMI, WASILAT, DEBORAH, SHINDARA
+
+Rules:
+1. Each row in the register = one student. Read ALL rows.
+2. Ignore: CLASS, SERIAL NO, NAMES (header), BALANCE, FROM LAST TERM, numbers, dates
+3. Do NOT split a single student into two entries
+4. If handwriting is unclear, make your BEST guess at the Nigerian name
+5. Return surname and firstname SEPARATELY
+
+Return ONLY valid JSON.`;
+
+const GEMINI_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    students: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          surname:   { type: 'STRING' },
+          firstname: { type: 'STRING' },
+          fullName:  { type: 'STRING' }
+        },
+        required: ['surname','firstname','fullName']
       }
     }
-  });
-  if (current !== null) joined.push(current);
+  },
+  required: ['students']
+};
 
-  // Step 2: clean each joined line and extract the name
-  joined.forEach(line => {
-    const cleaned = cleanName(line);
-    if (cleaned) names.push(cleaned);
-  });
-
-  return names;
+async function geminiOCR(base64, mime) {
+  // Re-read key at call time (may have been set via the key prompt after page load)
+  const apiKey = window.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || GEMINI_KEY;
+  if (!apiKey) throw new Error('No Gemini key set — skipping to fallback');
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { inline_data: { mime_type: mime, data: base64 } },
+            { text: GEMINI_PROMPT }
+          ]}],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            response_schema: GEMINI_SCHEMA
+          }
+        })
+      });
+      const d = await r.json();
+      if (d.error) {
+        lastError = d.error.message || 'Gemini error';
+        if (d.error.code === 404 || d.error.status === 'NOT_FOUND') continue;
+        throw new Error(lastError);
+      }
+      const raw = d.candidates?.[0]?.content?.parts?.[0]?.text || '{"students":[]}';
+      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      const students = parsed.students || [];
+      console.log(`✅ Gemini OCR (${model}): ${students.length} names`);
+      return students;
+    } catch (e) {
+      lastError = e.message;
+      console.warn(`Gemini ${model} failed:`, e.message);
+    }
+  }
+  throw new Error('All Gemini models failed: ' + lastError);
 }
+
+
+// ── OCR Upload Overlay ──────────────────────────────────────────────────
+function ocrOverlayShow(filename) {
+  const el = document.getElementById('ocr-overlay');
+  if (!el) return;
+  el.style.display = 'flex';
+  // Reset all steps
+  ['load','upload','read','done'].forEach(s => {
+    const icon = document.getElementById(`ocr-step-${s}-icon`);
+    const text = document.getElementById(`ocr-step-${s}-text`);
+    const row  = document.getElementById(`ocr-step-${s}`);
+    if (icon) icon.textContent = { load:'⏳', upload:'☁️', read:'🔍', done:'✅' }[s];
+    if (row)  row.style.color = '#94a3b8';
+  });
+  const bar = document.getElementById('ocr-bar');
+  if (bar) bar.style.width = '0%';
+  const fn = document.getElementById('ocr-filename');
+  if (fn) fn.textContent = filename || 'image';
+  const st = document.getElementById('ocr-status');
+  if (st) st.textContent = 'Preparing...';
+  const pg = document.getElementById('ocr-pages');
+  if (pg) { pg.style.display = 'none'; pg.textContent = ''; }
+  // Hide thumb until we have data
+  const tw = document.getElementById('ocr-thumb-wrap');
+  if (tw) tw.style.display = 'none';
+}
+
+function ocrOverlayThumb(dataUrl) {
+  const img = document.getElementById('ocr-thumb');
+  const wrap = document.getElementById('ocr-thumb-wrap');
+  if (!img || !wrap) return;
+  // Only show thumb for image types
+  if (dataUrl && dataUrl.startsWith('data:image')) {
+    img.src = dataUrl;
+    wrap.style.display = 'block';
+  }
+}
+
+function ocrOverlayStep(step, status, progress) {
+  // step: 'load' | 'upload' | 'read' | 'done' | 'error'
+  const bar = document.getElementById('ocr-bar');
+  const st  = document.getElementById('ocr-status');
+  if (bar && progress !== undefined) bar.style.width = progress + '%';
+  if (st  && status)  st.textContent = status;
+
+  const stepMap = { load: 0, upload: 1, read: 2, done: 3 };
+  const stepIdx = stepMap[step] ?? -1;
+  ['load','upload','read','done'].forEach((s, i) => {
+    const icon = document.getElementById(`ocr-step-${s}-icon`);
+    const row  = document.getElementById(`ocr-step-${s}`);
+    if (!icon || !row) return;
+    if (i < stepIdx)      { icon.textContent = '✅'; row.style.color = '#4ade80'; }
+    else if (i === stepIdx) {
+      if (step === 'error') { icon.textContent = '❌'; row.style.color = '#f87171'; }
+      else { icon.textContent = '🔄'; row.style.color = '#818cf8'; }
+    }
+    else { row.style.color = '#94a3b8'; }
+  });
+  if (step === 'done')  { if (bar) bar.style.width = '100%'; if (bar) bar.style.background = 'linear-gradient(90deg,#22c55e,#4ade80)'; }
+  if (step === 'error') { if (bar) bar.style.background = '#ef4444'; }
+}
+
+function ocrOverlayPages(cur, total) {
+  const pg = document.getElementById('ocr-pages');
+  if (!pg) return;
+  if (total > 1) { pg.style.display = 'block'; pg.textContent = `Page ${cur} of ${total}`; }
+}
+
+function ocrOverlayHide(delayMs) {
+  setTimeout(() => {
+    const el = document.getElementById('ocr-overlay');
+    if (el) el.style.display = 'none';
+    // Reset bar colour for next use
+    const bar = document.getElementById('ocr-bar');
+    if (bar) bar.style.background = 'linear-gradient(90deg,#6366f1,#818cf8)';
+  }, delayMs || 0);
+}
+
+// ── OCR engine: OCR.space (cloud) with Gemini upgrade path ───────────────
+// Tesseract removed — unreliable on school registers, wastes 30s
+// Returns array of {surname, firstname, fullName}
+async function _readOnePage(file, pageNum, total, fbEl) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+
+    reader.onload = async ev => {
+      const imgData = ev.target.result;   // full data URI
+      const b64    = imgData.split(',')[1];
+      const mime   = file.type || 'image/jpeg';
+
+      // Show thumbnail in overlay
+      ocrOverlayThumb(imgData);
+      ocrOverlayStep('load', 'Image loaded — sending to cloud...', 20);
+      ocrOverlayPages(pageNum, total);
+
+      // ── 1. Gemini (only when key is configured) ────────────────────────
+      if (GEMINI_KEY) {
+        try {
+          ocrOverlayStep('upload', 'Sending to Gemini AI...', 35);
+          const names = await geminiOCR(b64, mime);
+          if (names && names.length) {
+            ocrOverlayStep('done', `✅ ${names.length} names found via Gemini AI`, 100);
+            resolve(names); return;
+          }
+        } catch (e) { console.warn(`Page ${pageNum} Gemini failed:`, e.message); }
+      }
+
+      // ── 2. OCR.space — single clean API call ──────────────────────────
+      // Only valid free-key params: base64image, language, apikey, OCREngine,
+      // scale, detectOrientation, filetype.  isHandwritten/isTable cause HTTP 400.
+      try {
+        ocrOverlayStep('upload', 'Uploading to cloud OCR...', 40);
+
+        const mimeToFt = {
+          'image/jpeg':'JPG','image/jpg':'JPG','image/png':'PNG',
+          'image/webp':'JPG','image/heic':'JPG','image/heif':'JPG',
+          'application/pdf':'PDF'
+        };
+        const ft = mimeToFt[mime] || 'JPG';
+
+        const ocrParams = new URLSearchParams({
+          base64image:       imgData,   // full data URI
+          language:          'eng',
+          apikey:            'helloworld',
+          OCREngine:         '2',       // best engine for mixed print/handwriting
+          scale:             'true',
+          detectOrientation: 'true',
+          filetype:          ft
+        });
+
+        ocrOverlayStep('read', 'Cloud OCR reading text...', 60);
+
+        const controller = new AbortController();
+        const ocrTimeout = setTimeout(() => controller.abort(), 30000);
+
+        let result;
+        try {
+          const resp = await fetch('https://api.ocr.space/parse/image', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body:    ocrParams.toString(),
+            signal:  controller.signal
+          });
+          clearTimeout(ocrTimeout);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          result = await resp.json();
+        } catch (fetchErr) {
+          clearTimeout(ocrTimeout);
+          const why = fetchErr.name === 'AbortError' ? 'timed out — check connection' : fetchErr.message;
+          ocrOverlayStep('error', '⚠️ Network error: ' + why, 60);
+          throw fetchErr;
+        }
+
+        // Check API-level errors
+        if (result.error) throw new Error(result.error);
+        if (result.IsErroredOnProcessing) throw new Error((result.ErrorMessage||[]).join('; '));
+
+        ocrOverlayStep('read', 'Extracting student names...', 80);
+        const text = (result.ParsedResults || []).map(r => r.ParsedText || '').join('\n');
+        console.log('✅ OCR.space text:', text.substring(0, 400));
+
+        if (text.trim().length > 2) {
+          // Nigerian register format (most accurate)
+          const ng = extractNigerianNames(text);
+          if (ng.length) {
+            ocrOverlayStep('done', `✅ ${ng.length} names found`, 100);
+            resolve(ng.map(n => { const p = n.trim().split(/\s+/); return { surname: p[0]||'', firstname: p.slice(1).join(' ')||'', fullName: n }; }));
+            return;
+          }
+          // Generic name parser
+          const gn = extractStudentNames(text);
+          if (gn.length) {
+            ocrOverlayStep('done', `✅ ${gn.length} names found`, 100);
+            resolve(gn.map(n => ({ surname: '', firstname: '', fullName: n })));
+            return;
+          }
+          // Last resort — pair adjacent single-word lines (two-column register support)
+          const rawLn = text.split(/\r?\n/)
+            .map(l => l.replace(/^[-\d.)\s*•✓✗]+/, '').replace(/[\d,]+\s*$/, '').trim().toUpperCase())
+            .filter(l => l.length >= 2 && /[A-Z]{2,}/.test(l));
+          const sngl = rawLn.filter(l => l.split(/\s+/).length === 1).length;
+          const paired = [];
+          if (rawLn.length >= 4 && sngl / rawLn.length > 0.55) {
+            for (let ri = 0; ri < rawLn.length; ri += 2) {
+              const sur = rawLn[ri] || ''; const fst = rawLn[ri+1] || '';
+              if (sur.length >= 2) paired.push({ surname: sur, firstname: fst.length >= 2 ? fst : '', fullName: sur + (fst.length >= 2 ? ' ' + fst : '') });
+            }
+          } else {
+            rawLn.slice(0, 80).forEach(l => {
+              const w = l.split(/\s+/);
+              paired.push({ surname: w[0]||'', firstname: w.slice(1).join(' ')||'', fullName: l });
+            });
+          }
+          if (paired.length) {
+            ocrOverlayStep('done', `📋 ${paired.length} names — please review`, 100);
+            resolve(paired); return;
+          }
+        }
+
+        // OCR returned blank — image may be too blurry
+        ocrOverlayStep('error', '⚠️ No text found — try a clearer photo', 100);
+        resolve([]);
+        return;
+
+      } catch (e) {
+        console.warn(`Page ${pageNum} OCR.space failed:`, e.message);
+        ocrOverlayStep('error', '⚠️ OCR failed: ' + e.message.substring(0, 60), 100);
+        resolve([]);
+        return;
+      }
+    };
+
+    reader.onerror = () => {
+      ocrOverlayStep('error', '❌ Could not read file — use an image or PDF', 100);
+      resolve([]);
+    };
+
+    // Step 1: read file
+    ocrOverlayStep('load', 'Reading file...', 10);
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Name validation / cleanup helpers (for text/OCR import) ──────────────
+const UI_BLACKLIST = [
+  'educational bloom','school portal','kobomoba','github','send whatsapp',
+  'reminders to all','revenue','students','expenses','analytics','settings',
+  'support','finance','comms','alumni','health','music','arts','sports',
+  'staff','security','opportunities','outstanding','collection rate',
+  'collection progress','overdue','unpaid','paid','partial','basic','premium',
+  'online','offline','syncing','principal','term ','session','exit','login',
+  'add student','import','fix names','upload','download','export','search',
+  'all classes','owes','owes:','fee','fees','phone','class','name',
+  'send ai','view students','bulk payment','bank statement',
+  'no students','loading','saving','please wait','tap to','click to',
+  'details','share','wallpaper','use as'
+];
+const VALID_PREFIXES = /^(mc\.?|cp\.?|ceb\.?|lsses?\.?|lses?\.?|sps\.?|spvenevang\.?|spsupevang\.?|snrldr\.?|honsnrevang\.?|evang\.?|hon\.?|snr\.?|ldr\.?|ven\.?|sup\.?|rev\.?|pastor|deacon|deaconess|bro\.?|sis\.?|mr\.?|mrs\.?|miss|dr\.?|prof\.?)\s/i;
+
+function looksLikeValidName(str) {
+  const t = (str || '').trim();
+  if (!t || t.length < 2) return false;
+  if (!/[a-zA-Z]/.test(t)) return false;
+  // Allow digits only if looks like a balance annotation — strip those first
+  const noDigits = t.replace(/\d+/g, '').trim();
+  if (noDigits.length < 2) return false;
+  const low = t.toLowerCase();
+  if (UI_BLACKLIST.some(b => low.includes(b))) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length > 6) return false;
+  const alpha = t.replace(/[^a-zA-Z]/g, '');
+  if (alpha.length < 3) return false;
+  // Nigerian names are ALL-CAPS from handwritten registers — normalise before checking
+  const isAllCaps = alpha === alpha.toUpperCase();
+  // Allow up to 8 consonants in a row for Yoruba/Hausa/Igbo names (e.g. AKINWANDE, GBELEGKALE)
+  const consonantRun = (t.match(/[^aeiouAEIOU\s.,'\'\-]{9,}/g) || []);
+  if (consonantRun.length > 0) return false;
+  const hasRealWord = words.some(w => {
+    const a = w.replace(/[^a-zA-Z]/g, '');
+    return a.length >= 3;
+  });
+  if (!hasRealWord) return false;
+  if (VALID_PREFIXES.test(t)) return true;
+  // Accept all-caps words of 3+ letters (Nigerian register format)
+  if (isAllCaps && alpha.length >= 3) return true;
+  const hasProperNoun = words.some(w => w.length >= 3 && /^[A-Z]/.test(w) && /[a-z]/.test(w));
+  return hasProperNoun;
+}
+
+
+// ── Nigerian Name Extractor — handles ALL-CAPS handwritten registers ──────
+// Understands: numbered rows, two-column (surname + firstname), balance notes
+function extractNigerianNames(raw) {
+  // ── Step 1: clean all lines ───────────────────────────────────────────
+  const allLines = (raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  const cleanLine = (line) => {
+    const low = line.toLowerCase();
+    if (UI_BLACKLIST.some(b => low.includes(b))) return null;
+    if (/^(class|serial|no\b|names?|balance|term|from|date|\bsn\b|s\/n)/i.test(line)) return null;
+    // Strip leading serial numbers: "1.", "- 2", "* 3", etc.
+    let c = line.replace(/^[-–•*x✓✗✔]?\s*\d+[.):\s]+/, '').trim();
+    // Strip trailing balance/fee noise
+    c = c.replace(/\bBALANCE[\s\d,]*$/i, '')
+         .replace(/[\d,]+\s*$/, '')
+         .replace(/\b(BALANCE|PAID|OWING|FEE|TERM|CLASS|FROM|BASIC|NURSERY|JSS|SS\d?)\b/gi, '')
+         .replace(/[^a-zA-Z\s'\-]/g, ' ')
+         .replace(/\s+/g, ' ')
+         .trim();
+    if (!c || c.length < 2) return null;
+    return c.toUpperCase();
+  };
+
+  // ── Step 2: classify each cleaned line ───────────────────────────────
+  // isNameWord: a word that looks like a Nigerian name token (3+ alpha chars)
+  const isNameWord = w => w && /^[A-Z][A-Z'\-]{2,}$/.test(w);
+
+  const cleaned = allLines.map(cleanLine).filter(Boolean);
+
+  // ── Step 3: detect two-column register format ─────────────────────────
+  // Signature: many consecutive single-word lines (OCR reads surname col then
+  // firstname col as interleaved or back-to-back single tokens).
+  // Strategy: scan for runs where >60% of lines are single words → pair them.
+  const wordCounts = cleaned.map(l => l.split(/\s+/).filter(isNameWord).length);
+  const singleWordLines = wordCounts.filter(n => n === 1).length;
+  const isTwoColumnRegister = cleaned.length >= 4 && (singleWordLines / cleaned.length) > 0.55;
+
+  const seen = new Set();
+  const results = [];
+
+  const addName = (sur, fst) => {
+    sur = (sur || '').trim();
+    fst = (fst || '').trim();
+    if (!sur || sur.length < 2) return;
+    const fullName = fst && fst.length >= 2 ? sur + ' ' + fst : sur;
+    if (!looksLikeValidName(fullName)) return;
+    const key = fullName.toLowerCase().replace(/[^a-z]/g, '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push(fullName);
+  };
+
+  if (isTwoColumnRegister) {
+    // ── Two-column mode: pair consecutive single-word lines ──────────────
+    // Pattern: line[i]=SURNAME, line[i+1]=FIRSTNAME (both single words)
+    // OR the OCR may output all surnames first then all firstnames (less common)
+    // We use the simpler approach: walk line by line, pair adjacent singles
+    let i = 0;
+    while (i < cleaned.length) {
+      const line = cleaned[i];
+      const words = line.split(/\s+/).filter(isNameWord);
+
+      if (words.length === 0) { i++; continue; }
+
+      if (words.length >= 2) {
+        // Already a full "SURNAME FIRSTNAME" on one line — use as-is
+        addName(words[0], words[1]);
+        i++;
+      } else {
+        // Single word — look ahead for the next single-word line to pair with
+        const next = cleaned[i + 1];
+        if (next) {
+          const nextWords = next.split(/\s+/).filter(isNameWord);
+          if (nextWords.length === 1) {
+            // Perfect pair: surname + firstname
+            addName(words[0], nextWords[0]);
+            i += 2;  // consume both lines
+            continue;
+          } else if (nextWords.length >= 2) {
+            // Next line has a full name — this single might be a stray header
+            addName(words[0], '');
+            i++;
+          } else {
+            addName(words[0], '');
+            i++;
+          }
+        } else {
+          addName(words[0], '');
+          i++;
+        }
+      }
+    }
+  } else {
+    // ── Normal mode: each line is one student ─────────────────────────────
+    cleaned.forEach(line => {
+      const words = line.split(/\s+/).filter(isNameWord);
+      if (!words.length) return;
+      addName(words[0], words[1] || '');
+    });
+  }
+
+  return results;
+}
+
+function extractStudentNames(raw) {
+  const lines = (raw || '').split(/\r?\n/);
+  const candidates = [];
+  lines.forEach(line => {
+    const t = line.trim();
+    if (!t) return;
+    if (t.includes(',') && !/^\d+[.)\s]/.test(t)) {
+      const col = t.split(',')[0].replace(/"/g, '').trim();
+      if (col) candidates.push(col);
+      return;
+    }
+    const stripped = t.replace(/^\d+[.):\s]+/, '').replace(/^[-*•]\s*/, '').trim();
+    if (stripped) candidates.push(stripped);
+  });
+  const seen = new Set();
+  const result = [];
+  candidates.forEach(rawName => {
+    const n = rawName.replace(/\s+/g, ' ').trim();
+    const key = n.toLowerCase().replace(/[^a-z]/g, '');
+    if (!key || seen.has(key)) return;
+    if (looksLikeValidName(n)) { seen.add(key); result.push(n); }
+  });
+  return result;
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let schoolId = null, userRole = null, currentStaff = null;
+let SD = {
+
+
+// ── Gemini API key prompt — shown when OCR is attempted without a key ─────
+function showGeminiKeyPrompt(onProceed) {
+  const existing = document.getElementById('gemini-key-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'gemini-key-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:flex-end;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:var(--bg);border-radius:20px 20px 0 0;padding:1.5rem 1.2rem 2rem;width:100%;max-width:520px;animation:slideup 0.25s ease;">
+      <div style="font-size:1.05rem;font-weight:800;margin-bottom:0.4rem;">🤖 Better OCR Available</div>
+      <p style="font-size:0.82rem;color:var(--sub);margin:0 0 1rem;line-height:1.6;">
+        Without a <strong>Gemini API key</strong>, OCR.space will be used — it struggles with <em>rotated handwritten Nigerian registers</em> and may produce 40–60% spelling errors.<br><br>
+        With Gemini, accuracy jumps to ~85–95% and it understands Nigerian names.
+      </p>
+      <div style="background:var(--s2);border-radius:12px;padding:0.9rem;margin-bottom:1rem;">
+        <div style="font-size:0.78rem;font-weight:700;color:var(--text);margin-bottom:0.5rem;">🔑 Enter Gemini API Key (free)</div>
+        <input id="gemini-key-input" type="password" placeholder="AIzaSy..."
+          style="width:100%;padding:0.6rem 0.75rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.82rem;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box;">
+        <div style="font-size:0.72rem;color:var(--sub);margin-top:0.4rem;">
+          Get a free key at <strong>aistudio.google.com</strong> → Create API Key
+        </div>
+      </div>
+      <div style="display:flex;gap:0.6rem;">
+        <button onclick="saveGeminiKeyAndProceed()" 
+          class="btn-brand" style="flex:1;padding:0.75rem;font-size:0.88rem;">
+          ✅ Save Key & Scan
+        </button>
+        <button onclick="skipGeminiKey()" 
+          style="flex:1;padding:0.75rem;font-size:0.82rem;border:1.5px solid var(--border);border-radius:12px;background:var(--bg);color:var(--sub);cursor:pointer;">
+          ⚠️ Continue Without Key
+        </button>
+      </div>
+      <button onclick="document.getElementById('gemini-key-modal').remove()"
+        style="display:block;width:100%;text-align:center;margin-top:0.75rem;background:none;border:none;color:var(--sub);font-size:0.78rem;cursor:pointer;">Cancel</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Store callback for after key save
+  window._geminiKeyCallback = onProceed;
+}
+
+function saveGeminiKeyAndProceed() {
+  const inp = document.getElementById('gemini-key-input');
+  const key = (inp?.value || '').trim();
+  if (!key || !key.startsWith('AIza')) {
+    inp.style.borderColor = '#ef4444';
+    inp.placeholder = 'Must start with AIza... — check your key';
+    return;
+  }
+  // Save to localStorage for this session
+  localStorage.setItem('gemini_api_key', key);
+  // Inject into runtime — update the GEMINI_KEY variable equivalent
+  window.GEMINI_API_KEY = key;
+  // Also patch: reload won't be needed since geminiOCR reads GEMINI_KEY at call time
+  // We need to update the const — but since it's const we use a workaround via window
+  document.getElementById('gemini-key-modal').remove();
+  toast('✅ Gemini key saved — scanning with AI...');
+  // Small delay then run
+  setTimeout(() => {
+    if (window._geminiKeyCallback) { window._geminiKeyCallback(); window._geminiKeyCallback = null; }
+  }, 300);
+}
+
+function skipGeminiKey() {
+  document.getElementById('gemini-key-modal').remove();
+  toast('⚠️ Using OCR.space — results may need heavy editing');
+  if (window._geminiKeyCallback) { window._geminiKeyCallback(); window._geminiKeyCallback = null; }
+}
+
+
+
+let _ocrPending = [];
+
+async function processImagesSequentially(files) {
+  const fbEl = $('csv-fb'); _ocrPending = [];
+
+  // Show the upload overlay for the first file
+  if (files.length > 0) {
+    const firstName = files[0].name || 'image';
+    ocrOverlayShow(firstName);
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    // Update overlay filename for multi-file uploads
+    if (i > 0) {
+      const fn = document.getElementById('ocr-filename');
+      if (fn) fn.textContent = f.name || `Image ${i+1}`;
+    }
+    if (fbEl) fbEl.textContent = `📸 Reading page ${i+1} of ${files.length}...`;
+    const names = await _readOnePage(f, i + 1, files.length, fbEl);
+    _ocrPending.push(...names);
+  }
+
+  if (!_ocrPending.length) {
+    ocrOverlayHide(2000);
+    if (fbEl) fbEl.textContent = '❌ Could not read any names. Try a clearer, well-lit photo.';
+    return;
+  }
+  const existingKeys = new Set(SD.students.map(s => s.name.toLowerCase().replace(/[^a-z]/g, '')));
+  _ocrPending = _ocrPending.filter(n => {
+    const key = (n.fullName || '').toLowerCase().replace(/[^a-z]/g, '');
+    return key.length > 1 && !existingKeys.has(key);
+  });
+  const totalFound = _ocrPending.length;
+  if (fbEl) fbEl.textContent = `✅ Found ${totalFound} name${totalFound!==1?'s':''} — review below.`;
+  ocrOverlayStep('done', `✅ ${totalFound} name${totalFound!==1?'s':''} ready to review`, 100);
+  // Hide overlay after brief success pause, then open review
+  setTimeout(() => {
+    ocrOverlayHide(0);
+    // Agent app: feed names into renderCountResult (the pipeline count display)
+    // Convert structured {surname, firstname, fullName} objects to plain name strings
+    const nameStrings = _ocrPending.map(function(n) {
+      const sur = (n.surname   || '').trim().toUpperCase();
+      const fst = (n.firstname || '').trim().toUpperCase();
+      return fst ? (sur + ' ' + fst) : (n.fullName || sur);
+    }).filter(function(n) { return n.trim().length > 1; });
+    if (nameStrings.length) {
+      renderCountResult(nameStrings);
+    } else {
+      const fbEl = document.getElementById('csv-loading') || document.getElementById('pipe-step-label');
+      if (fbEl) fbEl.textContent = '❌ No names found. Try a clearer, well-lit photo.';
+    }
+  }, 900);
+}
+
+function ocrShowReview(names) {
+  const modal = $('ocr-review-modal');
+  const list  = $('ocr-review-list');
+  const info  = $('ocr-review-info');
+  if (!modal || !list) { console.error('OCR review modal not found in HTML'); return; }
+
+  // Populate the "Set class for ALL" dropdown from existing class arms
+  const classDropdown = $('ocr-class-all');
+  if (classDropdown) {
+    const arms = [...new Set((SD.students||[]).map(s=>s.class||'').filter(Boolean))].sort();
+    // Also include common Nigerian class names as defaults
+    const defaults = ['JSS1A','JSS1B','JSS2A','JSS2B','JSS3A','JSS3B','SS1A','SS1B','SS2A','SS2B','SS3A','SS3B'];
+    const allArms  = [...new Set([...arms, ...defaults])];
+    classDropdown.innerHTML = '<option value="">Set class for ALL ▾</option>' +
+      allArms.map(a => `<option value="${a}">${a}</option>`).join('');
+  }
+
+  if (info) info.textContent = `${names.length} name${names.length!==1?'s':''} found. ✏️ Edit any wrong names, 🗑️ delete bad ones, then tap Add Students.`;
+
+  // Pre-filter: remove entries that have no usable name content
+  const validNames = names.filter(n => {
+    const full = (n.fullName || n.surname || '').trim();
+    return full.length >= 2 && /[a-zA-Z]{2,}/.test(full);
+  });
+  // Update info text with actual count after filtering
+  if (info) info.textContent = `${validNames.length} name${validNames.length!==1?'s':''} found. ✏️ Edit wrong names, ✕ delete bad ones, then tap Add Students.`;
+
+  list.innerHTML = validNames.map((n, i) => {
+    // FIX: define sur/fst properly from the name object
+    const sur = (n.surname  || '').trim().toUpperCase();
+    const fst = (n.firstname|| '').trim().toUpperCase();
+    const fullName = n.fullName || ((sur + ' ' + fst).trim());
+    // If surname/firstname not split, put everything in surname field
+    const surVal = sur || fullName.split(/\s+/)[0] || '';
+    const fstVal = fst || fullName.split(/\s+/).slice(1).join(' ') || '';
+
+    return `<div class="ocr-row" id="ocr-row-${i}" style="display:flex;align-items:center;gap:4px;padding:7px 4px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+      <input type="checkbox" id="ocr-chk-${i}" checked onchange="ocrUpdateCount()"
+        style="width:20px;height:20px;cursor:pointer;accent-color:var(--brand);flex-shrink:0;">
+      <input type="text" id="ocr-sur-${i}" value="${surVal.replace(/"/g,'&quot;')}" placeholder="Surname"
+        style="width:110px;border:1.5px solid var(--border);border-radius:7px;padding:5px 7px;font-size:0.82rem;background:var(--bg);color:var(--text);font-family:inherit;font-weight:700;text-transform:uppercase;">
+      <input type="text" id="ocr-fst-${i}" value="${fstVal.replace(/"/g,'&quot;')}" placeholder="First name"
+        style="width:100px;border:1.5px solid var(--border);border-radius:7px;padding:5px 7px;font-size:0.82rem;background:var(--bg);color:var(--text);font-family:inherit;text-transform:uppercase;">
+      <input type="text" id="ocr-cls-${i}" placeholder="Class"
+        style="width:68px;border:1.5px solid var(--border);border-radius:7px;padding:5px 6px;font-size:0.78rem;background:var(--bg);color:var(--text);font-family:inherit;flex-shrink:0;">
+      <button onclick="document.getElementById('ocr-row-${i}').remove();ocrUpdateCount()"
+        style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:7px;padding:5px 10px;cursor:pointer;color:#dc2626;font-size:0.82rem;font-weight:700;flex-shrink:0;">✕</button>
+    </div>`;
+  }).join('');
+
+  ocrUpdateCount();
+  openM('ocr-review-modal');
+}
+
+function ocrUpdateCount() {
+  const checked = document.querySelectorAll('#ocr-review-list input[type=checkbox]:checked').length;
+  const btn = $('ocr-confirm-btn');
+  if (btn) btn.textContent = `✅ Add ${checked} Student${checked!==1?'s':''}`;
+}
+
 
 function readTextOrCSV(file) {
   const reader = new FileReader();
