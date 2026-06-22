@@ -1576,3 +1576,232 @@ function renderSettingsProfile() {
   if (inp && saved) inp.value = saved.slice(0,6) + '••••••••••••••••••••••••••••••••';
 }
 
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 2: AI OCR ENGINE & OFFLINE SYNC
+// ═══════════════════════════════════════════════════════════════════════
+
+function getAIKey() { return window.ZHIPU_API_KEY || localStorage.getItem('zhipu_api_key') || ''; }
+
+function showGeminiKeyPrompt(onProceed) {
+  const old = document.getElementById('ai-key-modal');
+  if (old) { old.remove(); onProceed(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'ai-key-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:1rem;';
+  modal.innerHTML = `
+    <div style="background:#1e1b4b;border:2px solid #3b82f6;border-radius:20px;padding:1.8rem;width:100%;max-width:400px;box-shadow:0 0 80px #3b82f650;">
+      <div style="font-size:1.2rem;font-weight:800;color:#e0e7ff;margin-bottom:0.5rem;">🧠 Activate AI OCR (GLM-4V)</div>
+      <p style="font-size:0.82rem;color:#a5b4fc;margin-bottom:1rem;line-height:1.6;">Uses the same AI as OCR.z.ai. Perfectly reads Nigerian handwritten registers.<br><br><strong style="color:#fbbf24;">⚠️ Needs internet to scan.</strong><br>If offline, photo is saved and scanned automatically when network returns.</p>
+      <input type="text" id="ai-key-input" placeholder="Paste Zhipu API Key here..." style="width:100%;padding:0.7rem;border:1.5px solid #3b82f6;border-radius:10px;background:#0f0a2e;color:#e0e7ff;font-size:0.9rem;font-family:monospace;margin-bottom:0.5rem;box-sizing:border-box;">
+      <p style="font-size:0.72rem;color:#64748b;margin-bottom:1rem;">Get free key at: <a href="https://open.bigmodel.cn" target="_blank" style="color:#818cf8;">open.bigmodel.cn</a></p>
+      <button onclick="const k=document.getElementById('ai-key-input').value.trim();if(k){localStorage.setItem('zhipu_api_key',k);window.ZHIPU_API_KEY=k;}document.getElementById('ai-key-modal').remove();if(typeof onProceed==='function')onProceed();" class="btn-brand" style="width:100%;padding:0.8rem;border-radius:10px;background:linear-gradient(90deg,#2563eb,#3b82f6);">✅ Save Key & Start Scanning</button>
+    </div>`;
+  document.body.appendChild(modal);
+  setTimeout(() => { const inp = document.getElementById('ai-key-input'); if(inp) inp.focus(); }, 100);
+}
+
+let ocrDB = null;
+function initOCRDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('BloomOCR_DB', 1);
+    request.onupgradeneeded = (e) => { e.target.result.createObjectStore('pending_scans', { autoIncrement: true }); };
+    request.onsuccess = (e) => { ocrDB = e.target.result; resolve(true); };
+    request.onerror = (e) => reject(e);
+  });
+}
+async function saveOfflineScan(b64, mime, name) {
+  if (!ocrDB) await initOCRDB();
+  return new Promise((resolve, reject) => {
+    const tx = ocrDB.transaction('pending_scans', 'readwrite');
+    tx.objectStore('pending_scans').add({ base64: b64, mime, name, timestamp: Date.now() });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = (e) => reject(e);
+  });
+}
+async function getOfflineScans() {
+  if (!ocrDB) await initOCRDB();
+  return new Promise((resolve, reject) => {
+    const tx = ocrDB.transaction('pending_scans', 'readonly');
+    const req = tx.objectStore('pending_scans').getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e);
+  });
+}
+async function deleteOfflineScan(id) { if (!ocrDB) return; ocrDB.transaction('pending_scans', 'readwrite').objectStore('pending_scans').delete(id); }
+initOCRDB().catch(() => {});
+
+const GLM_PROMPT = `You are reading a Nigerian school register. Extract EVERY student name. Ignore serial numbers, class names, fees, and totals. Return ONLY JSON: {"students": [{"surname": "SURNAME", "firstname": "FIRSTNAME", "fullName": "SURNAME FIRSTNAME"}]}`;
+
+async function glmVisionOCR(b64, mime) {
+  const apiKey = getAIKey();
+  if (!apiKey) throw new Error('No API key');
+  const resp = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'glm-4v-flash',
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: GLM_PROMPT },
+        { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
+      ]}],
+      temperature: 0.1, max_tokens: 4096
+    })
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message);
+  const text = (data.choices?.[0]?.message?.content || '{"students":[]}').replace(/```json|```/g, '').trim();
+  return JSON.parse(text).students || [];
+}
+
+async function _readOnePage(file, pageNum, total) {
+  return new Promise(async resolve => {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const imgData = ev.target.result;
+      const b64 = imgData.split(',')[1];
+      let mime = file.type || 'image/jpeg';
+      ocrOverlayThumb(imgData);
+      ocrOverlayStep('load', 'Image loaded', 15);
+      ocrOverlayPages(pageNum, total);
+      const isOnline = navigator.onLine && getAIKey();
+      if (!isOnline) {
+        try {
+          ocrOverlayStep('read', !navigator.onLine ? '📱 No network — saving photo securely...' : '🔑 No API Key — saving photo securely...', 50);
+          await saveOfflineScan(b64, mime, file.name);
+          ocrOverlayStep('done', `✅ Photo ${pageNum}/${total} saved offline. It will read automatically when you have internet.`, 100);
+          if (pageNum === total) {
+            ocrOverlayHide(2000);
+            setTimeout(() => { pipelineReset(); alert('📡 You are offline. Photo(s) saved. Open app later when network returns to read names.'); }, 2200);
+          }
+          resolve([]); return;
+        } catch (e) { ocrOverlayStep('error', '❌ Failed to save: ' + e.message, 100); resolve([]); return; }
+      }
+      try {
+        ocrOverlayStep('upload', '🧠 Sending to AI (GLM-4V)...', 40);
+        const students = await glmVisionOCR(b64, mime);
+        if (students.length > 0) { ocrOverlayStep('done', `✅ AI read ${students.length} names perfectly!`, 100); resolve(students); return; }
+      } catch (e) {
+        console.warn('AI failed, saving offline:', e.message);
+        ocrOverlayStep('error', '⚠️ AI error. Saving offline to retry later.', 90);
+        await saveOfflineScan(b64, mime, file.name).catch(()=>{});
+      }
+      resolve([]);
+    };
+    reader.onerror = () => { ocrOverlayStep('error', '❌ Could not read file', 100); resolve([]); };
+    ocrOverlayStep('load', 'Reading file...', 10);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function processImagesSequentially(files) {
+  if (!files.length) return;
+  const allStudents = [];
+  ocrOverlayShow(files[0].name);
+  for (let i = 0; i < files.length; i++) {
+    ocrOverlayPages(i + 1, files.length);
+    const students = await _readOnePage(files[i], i + 1, files.length);
+    if (students && students.length) allStudents.push(...students);
+  }
+  ocrOverlayHide(1200);
+  if (allStudents.length > 0) {
+    const seen = new Set();
+    const unique = allStudents.filter(s => { const key = (s.fullName||'').toLowerCase().replace(/[^a-z]/g,''); if(!key||seen.has(key))return false; seen.add(key); return true; });
+    showOCRReviewModal(unique);
+  }
+}
+
+async function syncOfflineScans() {
+  if (!navigator.onLine || !getAIKey()) return;
+  const pending = await getOfflineScans().catch(() => []);
+  if (!pending.length) return;
+  pipelineToast(`📡 Network back! AI reading ${pending.length} saved photo(s)...`);
+  const allStudents = [];
+  for (const scan of pending) {
+    try {
+      ocrOverlayShow(scan.name || 'Offline Scan');
+      const students = await glmVisionOCR(scan.base64, scan.mime);
+      if (students.length) allStudents.push(...students);
+      await deleteOfflineScan(scan.id);
+    } catch (e) { console.warn('Sync failed'); }
+  }
+  ocrOverlayHide(500);
+  if (allStudents.length > 0) {
+    const seen = new Set();
+    const unique = allStudents.filter(s => { const key = (s.fullName||'').toLowerCase().replace(/[^a-z]/g,''); if(!key||seen.has(key))return false; seen.add(key); return true; });
+    showOCRReviewModal(unique);
+  }
+}
+window.addEventListener('online', () => { SQ.ping(); SQ.run(); syncOfflineScans(); });
+
+function readTextOrCSV(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const csvNames = [];
+    for (const line of lines) {
+      if (/^(name|surname|first|s\/n|serial|no\.|class)/i.test(line)) continue;
+      let name = '';
+      const cols = line.split(/[,\t;]/);
+      if (cols.length >= 2) { name = (cols[0].replace(/"/g,'').trim() + ' ' + cols[1].replace(/"/g,'').trim()).trim(); }
+      else { name = line.replace(/^\d+[.)\s]+/, '').replace(/^[-*•]\s*/, '').trim(); }
+      const cleaned = cleanName(name);
+      if (cleaned) csvNames.push({ surname: '', firstname: '', fullName: cleaned });
+    }
+    if (csvNames.length) showOCRReviewModal(csvNames);
+    else { pipelineReset(); alert('No names found in file.'); }
+  };
+  reader.onerror = () => { pipelineReset(); alert('Could not read file.'); };
+  reader.readAsText(file);
+}
+
+function resetCSVCount() { csvStudentCount = 0; csvParsedNames = []; }
+
+let ocrReviewData = [];
+const NIGERIAN_CLASSES = ['','Nursery 1','Nursery 2','Primary 1','Primary 2','Primary 3','Primary 4','Primary 5','Primary 6','JSS 1','JSS 2','JSS 3','SSS 1','SSS 2','SSS 3'];
+
+function showOCRReviewModal(students) {
+  ocrReviewData = students.map(s => ({ surname: s.surname||'', firstname: s.firstname||'', fullName: s.fullName||(s.surname+' '+s.firstname).trim(), selected: true, className: '' }));
+  const cs = document.getElementById('ocr-class-all');
+  if(cs) cs.innerHTML = '<option value="">Set class for ALL ▾</option>' + NIGERIAN_CLASSES.filter(c=>c).map(c=>`<option value="${c}">${c}</option>`).join('');
+  const info = document.getElementById('ocr-review-info');
+  if(info) info.textContent = `${ocrReviewData.length} names found. Uncheck mistakes. Edit names by clicking them.`;
+  renderOCRReviewList();
+  openM('ocr-review-modal');
+}
+
+function renderOCRReviewList() {
+  const list = document.getElementById('ocr-review-list');
+  if(!list) return;
+  const opts = NIGERIAN_CLASSES.map(c=>`<option value="${c}">${c||'—'}</option>`).join('');
+  list.innerHTML = ocrReviewData.map((s, i) => `
+    <div class="ocr-row" style="display:flex;gap:4px;align-items:center;padding:5px 4px;border-bottom:1px solid var(--border);${!s.selected?'opacity:0.4;':''}" data-idx="${i}">
+      <input type="checkbox" ${s.selected?'checked':''} onchange="ocrToggleRow(${i},this.checked)" style="width:18px;height:18px;flex-shrink:0;accent-color:#7c3aed;">
+      <input type="text" value="${esc(s.surname)}" placeholder="Surname" onchange="ocrEditField(${i},'surname',this.value)" style="width:110px;flex-shrink:0;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;font-family:inherit;">
+      <input type="text" value="${esc(s.firstname)}" placeholder="First name" onchange="ocrEditField(${i},'firstname',this.value)" style="width:100px;flex-shrink:0;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;font-family:inherit;">
+      <select onchange="ocrEditField(${i},'className',this.value)" style="width:68px;flex-shrink:0;padding:4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.72rem;">${opts}</select>
+      <button onclick="ocrDeleteRow(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1rem;padding:2px 4px;flex-shrink:0;">✕</button>
+    </div>`).join('');
+}
+
+function ocrToggleRow(i, c) { if(ocrReviewData[i]){ ocrReviewData[i].selected=c; const r=document.querySelector(`.ocr-row[data-idx="${i}"]`); if(r) r.style.opacity=c?'1':'0.4'; } }
+function ocrEditField(i, f, v) { if(ocrReviewData[i]){ ocrReviewData[i][f]=v.trim(); if(f==='surname'||f==='firstname'){ const s=ocrReviewData[i]; s.fullName=(s.surname+' '+s.firstname).trim(); } } }
+function ocrDeleteRow(i) { ocrReviewData.splice(i, 1); renderOCRReviewList(); }
+function ocrSelectAll(c) { ocrReviewData.forEach(s=>s.selected=c); renderOCRReviewList(); }
+function ocrSetClassAll() { const v=document.getElementById('ocr-class-all').value; if(!v) return; ocrReviewData.forEach(s=>{ if(s.selected) s.className=v; }); renderOCRReviewList(); document.getElementById('ocr-class-all').value=''; }
+
+function ocrConfirmImport() {
+  const sel = ocrReviewData.filter(s => s.selected && (s.fullName || s.surname || s.firstname));
+  if (!sel.length) { alert('No names selected.'); return; }
+  const seen = new Set();
+  csvParsedNames = sel.map(s => { const n = s.fullName||`${s.surname} ${s.firstname}`.trim(); const k=n.toLowerCase().replace(/[^a-z]/g,''); if(!k||seen.has(k))return null; seen.add(k); return {name:n, class:s.className||null, surname:s.surname, firstname:s.firstname}; }).filter(Boolean);
+  csvStudentCount = csvParsedNames.length;
+  closeM('ocr-review-modal');
+  renderCountResult(csvParsedNames.map(s => s.name));
+  pipelineToast(`✅ ${csvStudentCount} students imported!`);
+}
+
+function openM(id) { const e=document.getElementById(id); if(e) e.style.display='flex'; }
+function closeM(id) { const e=document.getElementById(id); if(e) e.style.display='none'; }
