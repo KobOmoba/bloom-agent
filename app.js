@@ -597,7 +597,7 @@ const AARINAT_OCR_URL = 'https://aarinat-ocr.aarinat-company-limited.workers.dev
 // Free tier: https://console.groq.com — agents get key from Settings
 const GROQ_KEY_STORAGE = 'groq_api_key';
 function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_KEY_STORAGE) || ''; }
-const GROQ_OCR_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
 
 const GROQ_OCR_PROMPT = `You are reading a Nigerian primary/secondary school fee register.
 The register has columns: SERIAL NO | SURNAME | FIRST NAME | (fee columns).
