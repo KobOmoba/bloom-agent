@@ -638,8 +638,12 @@ async function groqVisionOCR(base64, mime) {
             { type: 'text', text: GROQ_OCR_PROMPT }
           ]
         }],
-        temperature: 0.05,
-        max_tokens: 8192
+        temperature:      0.7,    // Qwen3.6 non-thinking mode
+        top_p:            0.8,
+        top_k:            20,
+        presence_penalty: 1.5,
+        max_tokens:       8192,
+        reasoning_format: 'hidden' // suppresses <think> tokens — REQUIRED for Qwen3.6
       })
     });
     const data = await resp.json();
@@ -650,8 +654,10 @@ async function groqVisionOCR(base64, mime) {
       }
       throw new Error(msg);
     }
-    const text = data.choices?.[0]?.message?.content || '';
+    let text = data.choices?.[0]?.message?.content || '';
     if (!text.trim()) throw new Error('Empty response from Groq');
+    // Strip Qwen3.6 thinking tokens in case reasoning_format:hidden is ignored
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     let jsonStr = text.trim();
     const codeBlock = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlock) jsonStr = codeBlock[1].trim();
