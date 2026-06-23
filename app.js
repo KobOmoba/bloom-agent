@@ -755,12 +755,35 @@ function ocrOverlayHide(delayMs) {
 
 // ── OCR engine: AariNAT OCR (primary) → Groq Vision (fallback) ─────────────
 // Returns array of {surname, firstname, fullName}
+// ── Image resize helper — compresses phone photos before OCR ────────────
+// Groq Vision has a hard 4MB base64 limit; full-res camera shots easily exceed it.
+// This resizes to ≤1600px wide at 85% JPEG quality — typically 200-500KB result.
+function resizeImageForOCR(dataURL) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX_W = 1600;
+      const scale = img.width > MAX_W ? MAX_W / img.width : 1;
+      const w = Math.round(img.width  * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataURL); // fallback: use original if resize fails
+    img.src = dataURL;
+  });
+}
+
 async function _readOnePage(file, pageNum, total, fbEl) {
   return new Promise(resolve => {
     const reader = new FileReader();
 
     reader.onload = async ev => {
-      const imgData = ev.target.result;   // full data URI
+      // Resize to ≤1600px before sending — Groq has a 4MB base64 limit
+      const imgData = await resizeImageForOCR(ev.target.result);
       const b64    = imgData.split(',')[1];
       // Force valid MIME — Android camera photos often arrive with type=""
       let mime = file.type || '';
@@ -795,7 +818,9 @@ async function _readOnePage(file, pageNum, total, fbEl) {
             console.log('✅ AariNAT OCR:', aarinatData.students.length, 'names');
             resolve(aarinatData.students); return;
           } else {
-            console.warn('AariNAT OCR: ok response but no students:', aarinatData);
+            const errMsg = aarinatData.error || 'no students in response';
+            console.warn('AariNAT OCR: ok response but no students:', errMsg, aarinatData);
+            ocrOverlayStep('upload', '⚠️ AariNAT AI: ' + errMsg.slice(0,80) + ' — trying backup...', 35);
           }
         } else {
           console.warn('AariNAT OCR HTTP error:', aarinatResp.status, aarinatResp.statusText);
