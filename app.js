@@ -657,7 +657,7 @@ async function groqVisionOCR(base64, mime) {
           ]
         }],
         temperature: 0.2,
-        max_tokens:  8192
+        max_tokens:  3000  // 8192 hit qwen3.6-27b free-tier TPM limit
       })
     });
     const data = await resp.json();
@@ -782,7 +782,7 @@ function resizeImageForOCR(dataURL) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
-      const MAX_W = 1600;
+      const MAX_W = 800; // 1600 hit Groq free-tier TPM limit
       const scale = img.width > MAX_W ? MAX_W / img.width : 1;
       const w = Math.round(img.width  * scale);
       const h = Math.round(img.height * scale);
