@@ -596,6 +596,7 @@ const AARINAT_OCR_URL = 'https://aarinat-ocr.aarinat-company-limited.workers.dev
 // ── Groq Vision OCR — Llama 4 Scout vision model (fallback) ───────────────
 // Free tier: https://console.groq.com — agents get key from Settings
 const GROQ_KEY_STORAGE = 'groq_api_key';
+let _lastOcrError = '';
 function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_KEY_STORAGE) || ''; }
 const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
 
@@ -638,12 +639,8 @@ async function groqVisionOCR(base64, mime) {
             { type: 'text', text: GROQ_OCR_PROMPT }
           ]
         }],
-        temperature:      0.7,    // Qwen3.6 non-thinking mode
-        top_p:            0.8,
-        top_k:            20,
-        presence_penalty: 1.5,
-        max_tokens:       8192,
-        reasoning_format: 'hidden' // suppresses <think> tokens — REQUIRED for Qwen3.6
+        temperature: 0.2,
+        max_tokens:  8192
       })
     });
     const data = await resp.json();
@@ -853,12 +850,14 @@ async function _readOnePage(file, pageNum, total, fbEl) {
       } catch (e) {
         console.warn('Page ' + pageNum + ' Groq Vision failed:', e.message);
         if (e.message.includes('Groq API key invalid')) {
+          _lastOcrError = 'Groq API key is invalid — re-enter in Settings';
           ocrOverlayStep('error', '⚠️ Groq API key is invalid — open Settings and re-enter your key from console.groq.com', 100);
           resolve([]); return;
         }
       }
 
       // ── All engines failed ────────────────────────────────────────────
+      _lastOcrError = _lastOcrError || 'Could not read names from photo';
       ocrOverlayStep('error', '⚠️ Could not read names — try a clearer photo with better lighting', 100);
       resolve([]);
     };
@@ -1110,7 +1109,8 @@ async function processImagesSequentially(files) {
     renderCountResult(allNames);
   } else {
     pipelineReset();
-    alert('No student names found in any image.\n\nTips:\n• Hold phone directly above the register\n• Flatten the page fully\n• Use good lighting (avoid shadows)\n• Make sure all columns are visible');
+    const _ed = _lastOcrError ? ('\n\nError: ' + _lastOcrError.slice(0,150)) : '';
+    alert('No student names found in any image.' + _ed + '\n\nTips:\n• Hold phone directly above the register\n• Flatten the page fully\n• Use good lighting (avoid shadows)\n• Make sure all columns are visible');
   }
 }
 
