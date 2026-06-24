@@ -184,6 +184,23 @@ function startApp(){
   $('agent-name-hdr').textContent=agent.name;
   SQ.ping();
   go('submit');
+  // Pull Groq key from admin_settings — survives browsing-data clears
+  _fetchGroqKeyFromFirestore();
+}
+
+async function _fetchGroqKeyFromFirestore() {
+  if (!db) return;
+  try {
+    const snap = await db.collection('admin_settings').doc('main').get();
+    if (snap.exists) {
+      const key = snap.data().groqApiKey || '';
+      if (key) {
+        window.GROQ_API_KEY = key;
+        localStorage.setItem(GROQ_KEY_STORAGE, key);
+        console.log('✅ Groq key loaded from Firestore admin_settings');
+      }
+    }
+  } catch(e) { /* offline — use whatever is in localStorage */ }
 }
 
 function logout(){ if(!confirm('Logout?'))return; localStorage.removeItem('ag_agent'); location.reload(); }
