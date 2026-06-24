@@ -657,7 +657,8 @@ async function groqVisionOCR(base64, mime) {
           ]
         }],
         temperature: 0.2,
-        max_tokens:  3000  // 8192 hit qwen3.6-27b free-tier TPM limit
+        max_tokens:  600,  // 3000 still hit TPM; non-thinking mode needs far fewer
+        reasoning_effort: "none"  // disable thinking mode — eliminates <think> tokens, stays under 6K TPM
       })
     });
     const data = await resp.json();
@@ -782,7 +783,7 @@ function resizeImageForOCR(dataURL) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
-      const MAX_W = 800; // 1600 hit Groq free-tier TPM limit
+      const MAX_W = 400; // 800 still hit free-tier TPM; 400px enough for qwen3.6-27b OCR
       const scale = img.width > MAX_W ? MAX_W / img.width : 1;
       const w = Math.round(img.width  * scale);
       const h = Math.round(img.height * scale);
@@ -802,7 +803,7 @@ async function _readOnePage(file, pageNum, total, fbEl) {
     const reader = new FileReader();
 
     reader.onload = async ev => {
-      // Resize to ≤1600px — Groq has a 4MB base64 limit
+      // Resize to ≤400px — reduces image tokens to stay under 6K TPM free-tier limit
       const imgData = await resizeImageForOCR(ev.target.result);
       const b64    = imgData.split(',')[1];
       let mime = file.type || '';
