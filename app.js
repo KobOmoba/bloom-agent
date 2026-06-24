@@ -802,94 +802,60 @@ async function _readOnePage(file, pageNum, total, fbEl) {
     const reader = new FileReader();
 
     reader.onload = async ev => {
-      // Resize to ≤1600px before sending — Groq has a 4MB base64 limit
+      // Resize to ≤1600px — Groq has a 4MB base64 limit
       const imgData = await resizeImageForOCR(ev.target.result);
       const b64    = imgData.split(',')[1];
-      // Force valid MIME — Android camera photos often arrive with type=""
       let mime = file.type || '';
       if (!mime || mime === 'application/octet-stream' || mime === 'application/unknown') {
-        mime = 'image/jpeg'; // safe default for camera photos
+        mime = 'image/jpeg';
       }
 
-      // Show thumbnail in overlay
       ocrOverlayThumb(imgData);
-      ocrOverlayStep('load', 'Image loaded — sending to AI...', 20);
+      ocrOverlayStep('load', 'Image loaded — sending to Groq Vision...', 20);
       ocrOverlayPages(pageNum, total);
 
-      // ── 1. AariNAT OCR (primary) ──────────────────────────────────────
-      //    Cloudflare Workers endpoint owned by AariNAT
-      try {
-        ocrOverlayStep('upload', 'AariNAT AI scanning...', 30);
-        const aarinatCtrl = new AbortController();
-        const aarinatTimer = setTimeout(() => aarinatCtrl.abort(), 25000);
-
-        const aarinatResp = await fetch(AARINAT_OCR_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64: b64, mime: mime }),
-          signal: aarinatCtrl.signal
-        });
-        clearTimeout(aarinatTimer);
-
-        if (aarinatResp.ok) {
-          const aarinatData = await aarinatResp.json();
-          if (aarinatData.students && Array.isArray(aarinatData.students) && aarinatData.students.length > 0) {
-            ocrOverlayStep('done', '✅ ' + aarinatData.students.length + ' names found — AariNAT AI', 100);
-            console.log('✅ AariNAT OCR:', aarinatData.students.length, 'names');
-            resolve(aarinatData.students); return;
-          } else {
-            const errMsg = aarinatData.error || 'no students in response';
-            console.warn('AariNAT OCR: ok response but no students:', errMsg, aarinatData);
-            ocrOverlayStep('upload', '⚠️ AariNAT AI: ' + errMsg.slice(0,80) + ' — trying backup...', 35);
-          }
-        } else {
-          console.warn('AariNAT OCR HTTP error:', aarinatResp.status, aarinatResp.statusText);
-        }
-      } catch (e) {
-        const reason = e.name === 'AbortError' ? 'timed out (25s)' : e.message;
-        console.warn('AariNAT OCR failed (' + reason + '), falling back to Groq Vision...');
-      }
-
-      // ── 2. Groq Vision OCR — Llama 4 Scout (fallback) ────────────────
-      //    Requires API key from console.groq.com — set in Settings
+      // ── Groq Vision (direct — no Cloudflare Worker) ───────────────────
       const groqKey = getGroqKey();
       if (!groqKey) {
-        ocrOverlayStep('error', '⚠️ Primary scanner unavailable. Go to Settings → add your free Groq API key to enable backup scanner. Get one free at console.groq.com', 100);
+        _lastOcrError = 'Groq API key not set — go to Settings and paste your key';
+        ocrOverlayStep('error', '⚠️ No Groq key — tap Settings → paste your key → Save', 100);
         resolve([]); return;
       }
+
       try {
-        ocrOverlayStep('upload', 'Groq Vision scanning...', 50);
+        ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
         const names = await groqVisionOCR(b64, mime);
         if (names && names.length) {
-          ocrOverlayStep('done', '✅ ' + names.length + ' names found — Groq Vision', 100);
+          ocrOverlayStep('done', '✅ ' + names.length + ' names found (page ' + pageNum + ')', 100);
           resolve(names); return;
         }
+        // Groq returned 0 names — not an error but also not useful
+        _lastOcrError = 'Groq returned 0 names — try a clearer photo';
+        ocrOverlayStep('error', '⚠️ Groq read the image but found no names — try clearer photo', 100);
+        resolve([]);
       } catch (e) {
-        console.warn('Page ' + pageNum + ' Groq Vision failed:', e.message);
-        if (e.message.includes('Groq API key invalid')) {
-          _lastOcrError = 'Groq API key is invalid — re-enter in Settings';
-          ocrOverlayStep('error', '⚠️ Groq API key is invalid — open Settings and re-enter your key from console.groq.com', 100);
-          resolve([]); return;
+        // Capture the ACTUAL Groq error so we can see it
+        _lastOcrError = e.message || 'Groq Vision failed';
+        console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
+        if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
+          ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
+        } else {
+          ocrOverlayStep('error', '⚠️ Groq: ' + _lastOcrError.slice(0, 80), 100);
         }
+        resolve([]);
       }
-
-      // ── All engines failed ────────────────────────────────────────────
-      _lastOcrError = _lastOcrError || 'Could not read names from photo';
-      ocrOverlayStep('error', '⚠️ Could not read names — try a clearer photo with better lighting', 100);
-      resolve([]);
     };
 
     reader.onerror = () => {
+      _lastOcrError = 'Could not read file';
       ocrOverlayStep('error', '❌ Could not read file — use an image or PDF', 100);
       resolve([]);
     };
 
-    // Step 1: read file
     ocrOverlayStep('load', 'Reading file...', 10);
     reader.readAsDataURL(file);
   });
 }
-
 // ── Name validation / cleanup helpers (for text/OCR import) ──────────────
 const UI_BLACKLIST = [
   'educational bloom','school portal','kobomoba','github','send whatsapp',
