@@ -634,8 +634,8 @@ Rules:
 4. If handwriting is unclear, make your BEST guess at the Nigerian name
 5. Return surname and firstname SEPARATELY
 
-Return ONLY a valid JSON array. No markdown, no explanation. Example:
-[{"surname":"OGUNLADE","firstname":"GABRIEL","fullName":"OGUNLADE GABRIEL"}]`;
+Return ONLY a valid JSON object. No markdown, no explanation, no preamble. Use exactly this format:
+{"students":[{"surname":"OGUNLADE","firstname":"GABRIEL","fullName":"OGUNLADE GABRIEL"}]}`;
 
 async function groqVisionOCR(base64, mime, _retry) {
   if (_retry === undefined) _retry = 0;
@@ -659,7 +659,8 @@ async function groqVisionOCR(base64, mime, _retry) {
         }],
         temperature: 0.2,
         max_tokens:  600,  // non-thinking mode needs far fewer tokens
-        reasoning_effort: "none"  // disable thinking mode — eliminates <think> tokens
+        reasoning_effort: "none",  // disable thinking mode — eliminates <think> tokens
+        response_format: { type: "json_object" }  // force JSON — prevents prose fallback on hard pages
       })
     });
 
