@@ -637,7 +637,8 @@ Rules:
 Return ONLY a valid JSON array. No markdown, no explanation. Example:
 [{"surname":"OGUNLADE","firstname":"GABRIEL","fullName":"OGUNLADE GABRIEL"}]`;
 
-async function groqVisionOCR(base64, mime) {
+async function groqVisionOCR(base64, mime, _retry) {
+  if (_retry === undefined) _retry = 0;
   const apiKey = getGroqKey();
   if (!apiKey) throw new Error('No Groq API key');
   try {
@@ -657,10 +658,30 @@ async function groqVisionOCR(base64, mime) {
           ]
         }],
         temperature: 0.2,
-        max_tokens:  600,  // 3000 still hit TPM; non-thinking mode needs far fewer
-        reasoning_effort: "none"  // disable thinking mode — eliminates <think> tokens, stays under 6K TPM
+        max_tokens:  600,  // non-thinking mode needs far fewer tokens
+        reasoning_effort: "none"  // disable thinking mode — eliminates <think> tokens
       })
     });
+
+    // ── Auto-retry on TPM rate limit (429) ─────────────────────────────────
+    if (resp.status === 429) {
+      if (_retry >= 2) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error((errData.error && errData.error.message) || 'Rate limit — too many pages scanned at once. Wait 60s and try again.');
+      }
+      // Read exact reset time from Groq header (falls back to 65s if not exposed)
+      const resetRaw = resp.headers.get('x-ratelimit-reset-tokens') || resp.headers.get('retry-after') || '65';
+      const waitSecs = Math.ceil(parseFloat(resetRaw)) + 5; // add 5s safety buffer
+      console.log('TPM limit — waiting ' + waitSecs + 's before retry ' + (_retry + 1) + '/2');
+      // Show countdown in OCR overlay
+      const ld = document.getElementById('csv-loading');
+      for (let s = waitSecs; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Scanning paused — rate limit resets in ' + s + 's... (page will retry automatically)';
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      return groqVisionOCR(base64, mime, _retry + 1);
+    }
+
     const data = await resp.json();
     if (data.error) {
       const msg = data.error.message || ('Groq error ' + (data.error.code || ''));
@@ -671,7 +692,7 @@ async function groqVisionOCR(base64, mime) {
     }
     let text = data.choices?.[0]?.message?.content || '';
     if (!text.trim()) throw new Error('Empty response from Groq');
-    // Strip Qwen3.6 thinking tokens in case reasoning_format:hidden is ignored
+    // Strip any stray thinking tokens (defensive)
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     let jsonStr = text.trim();
     const codeBlock = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
