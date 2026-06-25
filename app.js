@@ -1100,7 +1100,18 @@ function readTextOrCSV(file) {
 // ── Sequential multi-image processor ───────────────────────────────────────
 async function processImagesSequentially(files) {
   const allNames = [];
+  // Inter-page delay to stay under Groq free-tier 6K TPM/min limit.
+  // 15s gap means max ~3 pages touch any 60s window → ~4500 tokens, safely under 6K.
+  const INTER_PAGE_DELAY_S = 15;
   for (let i = 0; i < files.length; i++) {
+    if (i > 0 && files.length > 1) {
+      // Countdown between pages — shows in the overlay so agent knows it's working
+      const ld = document.getElementById('csv-loading');
+      for (let s = INTER_PAGE_DELAY_S; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Cooling down (' + s + 's) before scanning page ' + (i + 1) + ' of ' + files.length + '...';
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
     ocrOverlayShow(files[i].name);
     const pageNames = await _readOnePage(files[i], i + 1, files.length, null);
     // Each entry is {surname, firstname, fullName} — collect fullNames
