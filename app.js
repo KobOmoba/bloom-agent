@@ -664,20 +664,21 @@ async function groqVisionOCR(base64, mime, _retry) {
       })
     });
 
-    // ── Auto-retry on TPM rate limit (429) ─────────────────────────────────
-    if (resp.status === 429) {
-      if (_retry >= 2) {
+    // ── Auto-retry on rate limit (429) or over-capacity (503/529) ────────────
+    if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
+      if (_retry >= 3) {
         const errData = await resp.json().catch(() => ({}));
-        throw new Error((errData.error && errData.error.message) || 'Rate limit — too many pages scanned at once. Wait 60s and try again.');
+        throw new Error((errData.error && errData.error.message) || 'Groq unavailable — try again in 1 minute.');
       }
-      // Read exact reset time from Groq header (falls back to 65s if not exposed)
-      const resetRaw = resp.headers.get('x-ratelimit-reset-tokens') || resp.headers.get('retry-after') || '65';
-      const waitSecs = Math.ceil(parseFloat(resetRaw)) + 5; // add 5s safety buffer
-      console.log('TPM limit — waiting ' + waitSecs + 's before retry ' + (_retry + 1) + '/2');
-      // Show countdown in OCR overlay
+      // 429 = TPM limit: use reset header; 503/529 = over capacity: wait 30s
+      const is429 = resp.status === 429;
+      const resetRaw = is429 ? (resp.headers.get('x-ratelimit-reset-tokens') || resp.headers.get('retry-after') || '65') : '30';
+      const waitSecs = Math.ceil(parseFloat(resetRaw)) + 5;
+      const reason = is429 ? 'rate limit' : 'server capacity';
+      console.log('Groq ' + reason + ' — waiting ' + waitSecs + 's before retry ' + (_retry + 1) + '/3');
       const ld = document.getElementById('csv-loading');
       for (let s = waitSecs; s > 0; s--) {
-        if (ld) ld.textContent = '⏳ Scanning paused — rate limit resets in ' + s + 's... (page will retry automatically)';
+        if (ld) ld.textContent = '⏳ Groq ' + reason + ' — retrying in ' + s + 's... (automatic)';
         await new Promise(r => setTimeout(r, 1000));
       }
       return groqVisionOCR(base64, mime, _retry + 1);
@@ -702,7 +703,24 @@ async function groqVisionOCR(base64, mime, _retry) {
     if (objWrap) jsonStr = objWrap[1].trim();
     const arrMatch = jsonStr.match(/(\[[\s\S]*\])/);
     if (arrMatch) jsonStr = arrMatch[1].trim();
-    const students = JSON.parse(jsonStr);
+    let students;
+    try {
+      students = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      // response_format:json_object is ignored for vision on this model.
+      // Model returned prose ("Based on the image..."). Extract names from the text directly.
+      console.warn('JSON parse failed — prose fallback on raw text:', text.slice(0, 100));
+      const fallbackNames = (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
+      const fb = fallbackNames.map(name => {
+        const parts = name.trim().toUpperCase().split(/\s+/);
+        return { surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '', fullName: name.trim().toUpperCase() };
+      }).filter(s => s.fullName.length >= 3);
+      if (fb.length > 0) {
+        console.log('✅ Prose fallback extracted ' + fb.length + ' names');
+        return fb;
+      }
+      throw new Error('Model returned text instead of JSON and name extraction failed — try a clearer photo');
+    }
     if (!Array.isArray(students) || !students.length) throw new Error('Groq returned 0 students');
     const normalized = students.map(s => {
       const sur = (s.surname || '').trim().toUpperCase();
