@@ -193,11 +193,18 @@ async function _fetchGroqKeyFromFirestore() {
   try {
     const snap = await db.collection('admin_settings').doc('main').get();
     if (snap.exists) {
-      const key = snap.data().groqApiKey || '';
-      if (key) {
-        window.GROQ_API_KEY = key;
-        localStorage.setItem(GROQ_KEY_STORAGE, key);
-        console.log('✅ Groq key loaded from Firestore admin_settings');
+      const d = snap.data();
+      const groqKey = d.groqApiKey || '';
+      if (groqKey) {
+        window.GROQ_API_KEY = groqKey;
+        localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
+        console.log('✅ Groq key loaded from Firestore');
+      }
+      const hfKey = d.hfApiKey || '';
+      if (hfKey) {
+        window.HF_API_KEY = hfKey;
+        localStorage.setItem(HF_KEY_STORAGE, hfKey);
+        console.log('✅ HF key loaded from Firestore');
       }
     }
   } catch(e) { /* offline — use whatever is in localStorage */ }
@@ -639,24 +646,75 @@ Return ONLY a valid JSON object. No markdown, no explanation, no preamble. Use e
 
 
 // ── Tesseract.js fallback for when Groq fails (no API, no rate limits) ───
-async function tessOCRFallback(dataURL) {
-  const loadTesseract = () => new Promise((res, rej) => {
-    if (window.Tesseract) { res(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
-  await loadTesseract();
-  const { data: { text } } = await Tesseract.recognize(dataURL, 'eng', {
-    logger: m => {
-      if (m.status === 'recognizing text') {
-        const ld = document.getElementById('csv-loading');
-        if (ld) ld.textContent = '📸 Local OCR... ' + Math.round((m.progress||0)*100) + '%';
+// ── HF Vision fallback (Qwen2.5-VL-7B) ─────────────────────────────────────
+const HF_OCR_MODEL = 'Qwen/Qwen2.5-VL-7B-Instruct';
+const HF_KEY_STORAGE = 'hf_api_key';
+function getHFKey() { return window.HF_API_KEY || localStorage.getItem(HF_KEY_STORAGE) || ''; }
+
+async function hfVisionOCR(base64, mime) {
+  const hfKey = getHFKey();
+  if (!hfKey) throw new Error('No HF API key — enter it in portal Settings');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  let resp;
+  try {
+    resp = await fetch(
+      'https://api-inference.huggingface.co/models/' + HF_OCR_MODEL + '/v1/chat/completions',
+      {
+        method: 'POST', signal: controller.signal,
+        headers: { 'Authorization': 'Bearer ' + hfKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: HF_OCR_MODEL,
+          messages: [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+            { type: 'text', text: GROQ_OCR_PROMPT }
+          ]}],
+          max_tokens: 600
+        })
       }
-    }
-  });
-  return (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
+    );
+    clearTimeout(timer);
+  } catch(fe) { clearTimeout(timer); throw new Error('HF network error: ' + fe.message); }
+  if (!resp.ok) {
+    const ed = await resp.json().catch(() => ({}));
+    throw new Error('HF ' + resp.status + ': ' + (ed.error?.message || resp.statusText));
+  }
+  const data = await resp.json();
+  let text = data.choices?.[0]?.message?.content || '';
+  if (!text.trim()) throw new Error('HF returned empty response');
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let jsonStr = text.trim();
+  const cb = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/); if (cb) jsonStr = cb[1].trim();
+  const ow = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/); if (ow) jsonStr = ow[1].trim();
+  const am = jsonStr.match(/(\[[\s\S]*\])/); if (am) jsonStr = am[1].trim();
+  let students;
+  try { students = JSON.parse(jsonStr); }
+  catch(_) {
+    const fb = extractNamesFromText(text);
+    return fb.map(n => { const p=n.trim().toUpperCase().split(/\s+/); return {surname:p[0]||'',firstname:p.slice(1).join(' ')||'',fullName:n.trim().toUpperCase()}; }).filter(s=>s.fullName.length>=3);
+  }
+  if (!Array.isArray(students) || !students.length) throw new Error('HF returned 0 students');
+  return students.map(s => {
+    const sur=(s.surname||'').trim().toUpperCase(), fst=(s.firstname||s.first_name||s.firstName||'').trim().toUpperCase();
+    const full=(s.fullName||s.full_name||'').trim().toUpperCase()||(sur+' '+fst).trim();
+    return {surname:sur, firstname:fst, fullName:full};
+  }).filter(s=>s.fullName.length>=2);
+}
+
+// ── OCR.space Engine 3 last resort (no key required, engine=3 is open source) ──
+async function ocrSpaceOCR(base64, mime) {
+  const fd = new FormData();
+  fd.append('base64Image', 'data:' + mime + ';base64,' + base64);
+  fd.append('language', 'eng');
+  fd.append('OCREngine', '3');
+  fd.append('isTable', 'true');
+  fd.append('apikey', 'helloworld');
+  const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: fd });
+  const data = await resp.json();
+  if (data.IsErroredOnProcessing) throw new Error('OCR.space: ' + (data.ErrorMessage?.[0] || 'error'));
+  const text = data.ParsedResults?.[0]?.ParsedText || '';
+  if (!text.trim()) throw new Error('OCR.space returned empty text');
+  return extractNamesFromText(text);
 }
 
 async function groqVisionOCR(base64, mime, _retry) {
@@ -933,24 +991,35 @@ async function _readOnePage(file, pageNum, total, fbEl) {
           ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
           resolve([]); return;
         }
-        // ── Tesseract.js local fallback — no API, no rate limits ─────────────
+        // ── HF Vision fallback ───────────────────────────────────────────────
         try {
-          ocrOverlayStep('scan', '📸 Groq failed — trying local OCR...', 70);
-          const tessNames = await tessOCRFallback(imgData);
-          if (tessNames && tessNames.length > 0) {
-            const mapped = tessNames.map(name => {
+          ocrOverlayStep('scan', '🤗 Trying HuggingFace Vision...', 70);
+          const hfResult = await hfVisionOCR(b64, mime);
+          if (hfResult && hfResult.length > 0) {
+            ocrOverlayStep('read', '🤗 HF: ' + hfResult.length + ' names (page ' + pageNum + ')', 100);
+            resolve(hfResult); return;
+          }
+        } catch (hfErr) {
+          console.warn('HF fallback failed:', hfErr.message);
+          ocrOverlayStep('scan', '📄 Trying OCR.space Engine 3...', 80);
+        }
+        // ── OCR.space Engine 3 last resort ───────────────────────────────────
+        try {
+          const ocrNames = await ocrSpaceOCR(b64, mime);
+          if (ocrNames && ocrNames.length > 0) {
+            const mapped = ocrNames.map(name => {
               const parts = name.trim().toUpperCase().split(/\s+/);
               return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
             }).filter(s => s.fullName.length >= 3);
             if (mapped.length > 0) {
-              ocrOverlayStep('read', '📸 Local OCR: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
+              ocrOverlayStep('read', '📄 OCR.space: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
               resolve(mapped); return;
             }
           }
-        } catch (tessErr) {
-          console.warn('Tesseract fallback failed:', tessErr.message);
+        } catch (ocrErr) {
+          console.warn('OCR.space fallback failed:', ocrErr.message);
         }
-        ocrOverlayStep('error', '⚠️ Groq: ' + _lastOcrError.slice(0, 80), 100);
+        ocrOverlayStep('error', '⚠️ All OCR failed: ' + _lastOcrError.slice(0, 60), 100);
         resolve([]);
       }
     };
