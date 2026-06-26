@@ -644,7 +644,7 @@ async function groqVisionOCR(base64, mime, _retry) {
 
   // ── 20-second fetch timeout — prevents infinite hang when Groq server doesn't respond ──
   const controller = new AbortController();
-  const fetchTimer = setTimeout(() => controller.abort(), 20000);
+  const fetchTimer = setTimeout(() => controller.abort(), 45000); // 45s: covers slow 4G upload + Groq processing
 
   let resp;
   try {
@@ -675,10 +675,10 @@ async function groqVisionOCR(base64, mime, _retry) {
     clearTimeout(fetchTimer);
     // AbortError = our 20s timeout fired (server not responding)
     if (fetchErr.name === 'AbortError') {
-      if (_retry >= 2) throw new Error('Groq timed out on all 3 attempts — page skipped');
+      if (_retry >= 2) throw new Error('Groq timed out — page skipped (slow connection or server busy)');
       const ld = document.getElementById('csv-loading');
       for (let s = 25; s > 0; s--) {
-        if (ld) ld.textContent = '⏳ Groq timeout — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
+        if (ld) ld.textContent = '⏳ Groq slow — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
         await new Promise(r => setTimeout(r, 1000));
       }
       return groqVisionOCR(base64, mime, _retry + 1);
