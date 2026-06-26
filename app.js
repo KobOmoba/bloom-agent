@@ -641,9 +641,16 @@ async function groqVisionOCR(base64, mime, _retry) {
   if (_retry === undefined) _retry = 0;
   const apiKey = getGroqKey();
   if (!apiKey) throw new Error('No Groq API key');
+
+  // ── 20-second fetch timeout — prevents infinite hang when Groq server doesn't respond ──
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), 20000);
+
+  let resp;
   try {
-    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + apiKey
@@ -658,27 +665,41 @@ async function groqVisionOCR(base64, mime, _retry) {
           ]
         }],
         temperature: 0.2,
-        max_tokens:  600,  // non-thinking mode needs far fewer tokens
-        reasoning_effort: "none",  // disable thinking mode — eliminates <think> tokens
-        response_format: { type: "json_object" }  // force JSON — prevents prose fallback on hard pages
+        max_tokens:  600,
+        reasoning_effort: "none",
+        response_format: { type: "json_object" }
       })
     });
+    clearTimeout(fetchTimer);
+  } catch (fetchErr) {
+    clearTimeout(fetchTimer);
+    // AbortError = our 20s timeout fired (server not responding)
+    if (fetchErr.name === 'AbortError') {
+      if (_retry >= 2) throw new Error('Groq timed out on all 3 attempts — page skipped');
+      const ld = document.getElementById('csv-loading');
+      for (let s = 25; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Groq timeout — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      return groqVisionOCR(base64, mime, _retry + 1);
+    }
+    throw fetchErr;
+  }
 
+  try {
     // ── Auto-retry on rate limit (429) or over-capacity (503/529) ────────────
     if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
-      if (_retry >= 3) {
+      if (_retry >= 2) {
         const errData = await resp.json().catch(() => ({}));
-        throw new Error((errData.error && errData.error.message) || 'Groq unavailable — try again in 1 minute.');
+        throw new Error((errData.error && errData.error.message) || 'Groq unavailable — page skipped, try rescanning.');
       }
-      // 429 = TPM limit: use reset header; 503/529 = over capacity: wait 30s
       const is429 = resp.status === 429;
-      const resetRaw = is429 ? (resp.headers.get('x-ratelimit-reset-tokens') || resp.headers.get('retry-after') || '65') : '30';
+      const resetRaw = is429 ? (resp.headers.get('x-ratelimit-reset-tokens') || '65') : '25';
       const waitSecs = Math.ceil(parseFloat(resetRaw)) + 5;
-      const reason = is429 ? 'rate limit' : 'server capacity';
-      console.log('Groq ' + reason + ' — waiting ' + waitSecs + 's before retry ' + (_retry + 1) + '/3');
+      const reason = is429 ? 'rate limit' : 'over capacity';
       const ld = document.getElementById('csv-loading');
       for (let s = waitSecs; s > 0; s--) {
-        if (ld) ld.textContent = '⏳ Groq ' + reason + ' — retrying in ' + s + 's... (automatic)';
+        if (ld) ld.textContent = '⏳ Groq ' + reason + ' — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
         await new Promise(r => setTimeout(r, 1000));
       }
       return groqVisionOCR(base64, mime, _retry + 1);
