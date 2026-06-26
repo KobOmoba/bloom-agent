@@ -554,24 +554,79 @@ function pipelineReset() {
 function pipelineRescan() { pipelineReset(); }
 
 function pipelineConfirmCount() {
-  // Move to step 3: fill school info
+  // If we have parsed names — show Review Names modal so agent can verify
+  if (csvParsedNames && csvParsedNames.length > 0) {
+    openOcrReviewModal(csvParsedNames);
+    return;
+  }
+  _proceedToStep3(); // no names to review — go straight to step 3
+}
+
+function _proceedToStep3() {
   const label = document.getElementById('pipe-step-label');
   const dot   = document.getElementById('pipe-step-dot');
   if (label) label.textContent = 'STEP 3 — Fill School Details & Submit';
   if (dot)   dot.style.background = '#fbbf24';
-
-  // Auto-fill count and auto-select tier
   const scount = document.getElementById('s-count');
   if (scount) { scount.value = csvStudentCount; autoTier(); }
-
-  // Scroll smoothly to school name field
   const nameField = document.getElementById('s-name');
-  if (nameField) {
-    nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    nameField.focus();
-  }
-  // Show a quick toast
-  pipelineToast('✅ Count locked! Now fill in school name + principal contact.');
+  if (nameField) { nameField.scrollIntoView({ behavior: 'smooth', block: 'center' }); nameField.focus(); }
+  pipelineToast('✅ ' + csvStudentCount + ' students confirmed! Fill in school details below.');
+}
+
+// ── OCR Review Modal ────────────────────────────────────────────────────────
+let _ocrReviewData = [];
+
+function openOcrReviewModal(parsedNames) {
+  _ocrReviewData = parsedNames.map(p => {
+    const full  = (p.name || '').trim().toUpperCase();
+    const parts = full.split(/\s+/);
+    return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', cls: p.class||'', selected: true };
+  });
+  const info = document.getElementById('ocr-review-info');
+  if (info) info.textContent = _ocrReviewData.length + ' students found — review names, set class, then tap Add Students.';
+  _renderOcrReviewList();
+  openM('ocr-review-modal');
+}
+
+function _renderOcrReviewList() {
+  const c = document.getElementById('ocr-review-list'); if (!c) return;
+  c.innerHTML = _ocrReviewData.map((r, i) =>
+    '<div style="display:flex;gap:3px;align-items:center;padding:5px 2px;border-bottom:1px solid var(--border);">' +
+      '<input type="checkbox" ' + (r.selected?'checked':'') + ' onchange="_ocrReviewData[' + i + '].selected=this.checked" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;">' +
+      '<input type="text" value="' + esc(r.surname) + '" placeholder="Surname" onchange="_ocrReviewData[' + i + '].surname=this.value.trim().toUpperCase()" style="width:105px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
+      '<input type="text" value="' + esc(r.firstname) + '" placeholder="First" onchange="_ocrReviewData[' + i + '].firstname=this.value.trim().toUpperCase()" style="width:90px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
+      '<input type="text" value="' + esc(r.cls) + '" placeholder="Class" onchange="_ocrReviewData[' + i + '].cls=this.value.trim()" style="flex:1;min-width:55px;margin:0;padding:4px 5px;font-size:0.77rem;">' +
+      '<button onclick="_ocrDelRow(' + i + ')" style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:3px 6px;cursor:pointer;font-size:0.68rem;color:#dc2626;flex-shrink:0;">✕</button>' +
+    '</div>'
+  ).join('');
+}
+
+function _ocrDelRow(i) {
+  _ocrReviewData.splice(i, 1);
+  _renderOcrReviewList();
+  const info = document.getElementById('ocr-review-info');
+  if (info) info.textContent = _ocrReviewData.length + ' students — review and set class before adding.';
+}
+
+function ocrSelectAll(checked) {
+  _ocrReviewData.forEach(r => r.selected = checked);
+  _renderOcrReviewList();
+}
+
+function ocrSetClassAll() {
+  const cls = document.getElementById('ocr-class-all')?.value || ''; if (!cls) return;
+  _ocrReviewData.forEach(r => { if (r.selected) r.cls = cls; });
+  _renderOcrReviewList();
+}
+
+function ocrConfirmImport() {
+  const sel = _ocrReviewData.filter(r => r.selected && (r.surname || r.firstname));
+  if (!sel.length) { alert('No students selected — tick at least one row.'); return; }
+  csvParsedNames = sel.map(r => ({ name: (r.surname + ' ' + r.firstname).trim(), class: r.cls || null }));
+  csvStudentCount = csvParsedNames.length;
+  closeM('ocr-review-modal');
+  _proceedToStep3();
 }
 
 function pipelineToast(msg) {
@@ -624,25 +679,22 @@ let _lastOcrError = '';
 function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_KEY_STORAGE) || ''; }
 const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
 
-const GROQ_OCR_PROMPT = `You are reading a Nigerian primary/secondary school fee register.
-The register has columns: SERIAL NO | SURNAME | FIRST NAME | (fee columns).
-The image may be rotated — read it in any orientation.
+const GROQ_OCR_PROMPT = `You are reading a Nigerian school attendance/fee register photo.
+Columns: SERIAL NO | SURNAME | FIRST NAME | (other columns — ignore them).
+The image may be at any angle — read it correctly.
 
-Your job: extract EVERY student's name as SURNAME + FIRSTNAME pairs.
+TASK: Extract every student name visible. Combine as "SURNAME FIRSTNAME" (all caps).
 
-Nigerian name examples from this type of school:
-- Surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE, OLAWALE, ODEREYE, AKINDELE, ADEBAYO, AYANRINDE, SHONPE, OLATUNDE, GBELEKALE, FAFIOLU, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, SABIU, JOHN, LAWAL, OLOYODE, AYOMIDE, OGUNSOLA, OLOWU, AFOLABI, IYELABOYE, OKEIOLUWAMI, OBASA
-- Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL, ADEMIDE, AMIDAT, WIQOYAT, ISREAL, DORCAS, MARYAM, MUSTAQEEM, AMINAT, CYNTHIA, ELIZABETH, TIRESIMI, WASILAT, DEBORAH, SHINDARA
+Nigerian name examples — surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE, OLAWALE, SHONPE, GBELEKALE, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, LAWAL, AYOMIDE, OBASA, OLATUNDE, ADENIYI, OLOOETU
+Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL, ADEMIDE, SUCCESS, EZEKIEL, AWAL, EMMANUEL, BIGGOLD, QUARDRI, MUEEZ, ZAINAB, SALAM, WAJUD
 
 Rules:
-1. Each row in the register = one student. Read ALL rows.
-2. Ignore: CLASS, SERIAL NO, NAMES (header), BALANCE, FROM LAST TERM, numbers, dates
-3. Do NOT split a single student into two entries
-4. If handwriting is unclear, make your BEST guess at the Nigerian name
-5. Return surname and firstname SEPARATELY
+1. Every row = one student — read ALL rows, do not skip any
+2. Ignore serial numbers, headers (NAMES, S/N), fee columns, dates, totals
+3. Unclear handwriting — make your BEST guess at the Nigerian name
+4. Output ONLY the JSON below — no explanation, no markdown, no extra text
 
-Return ONLY a valid JSON object. No markdown, no explanation, no preamble. Use exactly this format:
-{"students":[{"surname":"OGUNLADE","firstname":"GABRIEL","fullName":"OGUNLADE GABRIEL"}]}`;
+{"names":["OGUNLADE GABRIEL","KASALI RASAQ","ALAWODE SUCCESS"]}`;
 
 
 // ── Tesseract.js fallback for when Groq fails (no API, no rate limits) ───
@@ -695,6 +747,10 @@ async function hfVisionOCR(base64, mime) {
   }
   if (!Array.isArray(students) || !students.length) throw new Error('HF returned 0 students');
   return students.map(s => {
+    if (typeof s === 'string') {
+      const parts = s.trim().toUpperCase().split(/\s+/);
+      return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: s.trim().toUpperCase() };
+    }
     const sur=(s.surname||'').trim().toUpperCase(), fst=(s.firstname||s.first_name||s.firstName||'').trim().toUpperCase();
     const full=(s.fullName||s.full_name||'').trim().toUpperCase()||(sur+' '+fst).trim();
     return {surname:sur, firstname:fst, fullName:full};
@@ -809,34 +865,39 @@ async function groqVisionOCR(base64, mime, _retry) {
     let jsonStr = text.trim();
     const codeBlock = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlock) jsonStr = codeBlock[1].trim();
-    const objWrap = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/);
-    if (objWrap) jsonStr = objWrap[1].trim();
-    const arrMatch = jsonStr.match(/(\[[\s\S]*\])/);
-    if (arrMatch) jsonStr = arrMatch[1].trim();
+    // Handle {"names":[...]} (new compact format) or {"students":[...]} (legacy)
+    const namesWrap = jsonStr.match(/\{[\s\S]*"names"\s*:\s*(\[[\s\S]*\])\s*\}/);
+    if (namesWrap) jsonStr = namesWrap[1].trim();
+    else {
+      const objWrap = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/);
+      if (objWrap) jsonStr = objWrap[1].trim();
+      else { const arrMatch = jsonStr.match(/(\[[\s\S]*\])/); if (arrMatch) jsonStr = arrMatch[1].trim(); }
+    }
     let students;
     try {
       students = JSON.parse(jsonStr);
     } catch (parseErr) {
-      // response_format:json_object is ignored for vision on this model.
-      // Model returned prose ("Based on the image..."). Extract names from the text directly.
-      console.warn('JSON parse failed — prose fallback on raw text:', text.slice(0, 100));
+      console.warn('JSON parse failed — prose fallback:', text.slice(0, 100));
       const fallbackNames = (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
       const fb = fallbackNames.map(name => {
         const parts = name.trim().toUpperCase().split(/\s+/);
-        return { surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '', fullName: name.trim().toUpperCase() };
+        return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
       }).filter(s => s.fullName.length >= 3);
-      if (fb.length > 0) {
-        console.log('✅ Prose fallback extracted ' + fb.length + ' names');
-        return fb;
-      }
-      throw new Error('Model returned text instead of JSON and name extraction failed — try a clearer photo');
+      if (fb.length > 0) { console.log('✅ Prose fallback: ' + fb.length + ' names'); return fb; }
+      throw new Error('Model returned text — try a clearer photo');
     }
     if (!Array.isArray(students) || !students.length) throw new Error('Groq returned 0 students');
     const normalized = students.map(s => {
-      const sur = (s.surname || '').trim().toUpperCase();
-      const fst = (s.firstname || s.first_name || s.firstName || '').trim().toUpperCase();
-      const full = (s.fullName || s.full_name || '').trim().toUpperCase() || (sur + ' ' + fst).trim();
-      return { surname: sur, firstname: fst, fullName: full || (sur + ' ' + fst).trim() };
+      // New format: string element e.g. "KASALI RASAQ"
+      if (typeof s === 'string') {
+        const parts = s.trim().toUpperCase().split(/\s+/);
+        return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: s.trim().toUpperCase() };
+      }
+      // Legacy format: object with surname/firstname
+      const sur = (s.surname||'').trim().toUpperCase();
+      const fst = (s.firstname||s.first_name||s.firstName||'').trim().toUpperCase();
+      const full = (s.fullName||s.full_name||'').trim().toUpperCase() || (sur+' '+fst).trim();
+      return { surname: sur, firstname: fst, fullName: full };
     }).filter(s => s.fullName.length >= 2);
     console.log('✅ Groq Vision OCR (' + GROQ_OCR_MODEL + '): ' + normalized.length + ' names');
     return normalized;
@@ -1000,8 +1061,11 @@ async function _readOnePage(file, pageNum, total, fbEl) {
             resolve(hfResult); return;
           }
         } catch (hfErr) {
-          console.warn('HF fallback failed:', hfErr.message);
-          ocrOverlayStep('scan', '📄 Trying OCR.space Engine 3...', 80);
+          const hfMsg = hfErr.message.includes('No HF API key')
+            ? '⚠️ No HF key in portal Settings — trying OCR.space'
+            : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying OCR.space');
+          console.warn('HF fallback:', hfErr.message);
+          ocrOverlayStep('scan', hfMsg, 80);
         }
         // ── OCR.space Engine 3 last resort ───────────────────────────────────
         try {
@@ -1256,6 +1320,7 @@ function readTextOrCSV(file) {
 // ── Sequential multi-image processor ───────────────────────────────────────
 async function processImagesSequentially(files) {
   const allNames = [];
+  const _seen = new Set(); // cross-page dedup — same name on two pages only counted once
   // Inter-page delay to stay under Groq free-tier 6K TPM/min limit.
   // 15s gap means max ~3 pages touch any 60s window → ~4500 tokens, safely under 6K.
   const INTER_PAGE_DELAY_S = 15;
@@ -1270,10 +1335,11 @@ async function processImagesSequentially(files) {
     }
     ocrOverlayShow(files[i].name);
     const pageNames = await _readOnePage(files[i], i + 1, files.length, null);
-    // Each entry is {surname, firstname, fullName} — collect fullNames
+    // Each entry is {surname, firstname, fullName} — deduplicate across pages
     pageNames.forEach(n => {
-      const full = (n.fullName || (n.surname + ' ' + n.firstname)).trim();
-      if (full.length >= 2) allNames.push(full);
+      const full = (n.fullName || (n.surname + ' ' + n.firstname)).trim().toUpperCase();
+      const key  = full.replace(/[^A-Z]/g, ''); // letters-only key for fuzzy dedup
+      if (full.length >= 2 && !_seen.has(key)) { _seen.add(key); allNames.push(full); }
     });
   }
   ocrOverlayHide(800);
