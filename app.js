@@ -637,6 +637,28 @@ Rules:
 Return ONLY a valid JSON object. No markdown, no explanation, no preamble. Use exactly this format:
 {"students":[{"surname":"OGUNLADE","firstname":"GABRIEL","fullName":"OGUNLADE GABRIEL"}]}`;
 
+
+// ── Tesseract.js fallback for when Groq fails (no API, no rate limits) ───
+async function tessOCRFallback(dataURL) {
+  const loadTesseract = () => new Promise((res, rej) => {
+    if (window.Tesseract) { res(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  await loadTesseract();
+  const { data: { text } } = await Tesseract.recognize(dataURL, 'eng', {
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        const ld = document.getElementById('csv-loading');
+        if (ld) ld.textContent = '📸 Local OCR... ' + Math.round((m.progress||0)*100) + '%';
+      }
+    }
+  });
+  return (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
+}
+
 async function groqVisionOCR(base64, mime, _retry) {
   if (_retry === undefined) _retry = 0;
   const apiKey = getGroqKey();
@@ -679,6 +701,15 @@ async function groqVisionOCR(base64, mime, _retry) {
       const ld = document.getElementById('csv-loading');
       for (let s = 25; s > 0; s--) {
         if (ld) ld.textContent = '⏳ Groq slow — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      return groqVisionOCR(base64, mime, _retry + 1);
+    }
+    // Network error (e.g. "Failed to fetch") — retry after brief wait
+    if (_retry < 2) {
+      const ld = document.getElementById('csv-loading');
+      for (let s = 15; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Network error — retrying in ' + s + 's... (' + (_retry + 1) + '/2)';
         await new Promise(r => setTimeout(r, 1000));
       }
       return groqVisionOCR(base64, mime, _retry + 1);
@@ -896,14 +927,30 @@ async function _readOnePage(file, pageNum, total, fbEl) {
         ocrOverlayStep('error', '⚠️ Groq read the image but found no names — try clearer photo', 100);
         resolve([]);
       } catch (e) {
-        // Capture the ACTUAL Groq error so we can see it
         _lastOcrError = e.message || 'Groq Vision failed';
         console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
         if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
           ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
-        } else {
-          ocrOverlayStep('error', '⚠️ Groq: ' + _lastOcrError.slice(0, 80), 100);
+          resolve([]); return;
         }
+        // ── Tesseract.js local fallback — no API, no rate limits ─────────────
+        try {
+          ocrOverlayStep('scan', '📸 Groq failed — trying local OCR...', 70);
+          const tessNames = await tessOCRFallback(imgData);
+          if (tessNames && tessNames.length > 0) {
+            const mapped = tessNames.map(name => {
+              const parts = name.trim().toUpperCase().split(/\s+/);
+              return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
+            }).filter(s => s.fullName.length >= 3);
+            if (mapped.length > 0) {
+              ocrOverlayStep('read', '📸 Local OCR: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
+              resolve(mapped); return;
+            }
+          }
+        } catch (tessErr) {
+          console.warn('Tesseract fallback failed:', tessErr.message);
+        }
+        ocrOverlayStep('error', '⚠️ Groq: ' + _lastOcrError.slice(0, 80), 100);
         resolve([]);
       }
     };
