@@ -288,7 +288,7 @@
   </nav>
 </div>
 
-<script src="app.js?v=20260626d"></script>
+<script src="app.js?v=20260627a"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
@@ -360,10 +360,10 @@
 
     <!-- Bulk class assign + select all row -->
     <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;">
-      <select id="ocr-class-all" onchange="ocrSetClassAll()"
+      <input id="ocr-class-all" type="text" placeholder="Type class (e.g. JSS 2A)"
+        onkeydown="if(event.key==='Enter')ocrSetClassAll()"
         style="flex:1;padding:0.45rem 0.6rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.82rem;background:var(--bg);color:var(--text);font-family:inherit;">
-        <option value="">Set class for ALL ▾</option>
-      </select>
+      <button onclick="ocrSetClassAll()" style="padding:0.45rem 0.8rem;border:1.5px solid var(--brand);border-radius:9px;font-size:0.78rem;background:var(--brand);color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Set →</button>
       <button onclick="ocrSelectAll(true)"  style="padding:0.45rem 0.7rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.78rem;background:var(--bg);color:var(--text);cursor:pointer;font-weight:700;">☑ All</button>
       <button onclick="ocrSelectAll(false)" style="padding:0.45rem 0.7rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.78rem;background:var(--bg);color:var(--text);cursor:pointer;font-weight:700;">☐ None</button>
     </div>
