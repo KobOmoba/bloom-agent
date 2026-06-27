@@ -593,20 +593,28 @@ function _renderOcrReviewList() {
   const c = document.getElementById('ocr-review-list'); if (!c) return;
   c.innerHTML = _ocrReviewData.map((r, i) =>
     '<div style="display:flex;gap:3px;align-items:center;padding:5px 2px;border-bottom:1px solid var(--border);">' +
-      '<input type="checkbox" ' + (r.selected?'checked':'') + ' onchange="_ocrReviewData[' + i + '].selected=this.checked" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;">' +
+      '<input type="checkbox" ' + (r.selected?'checked':'') + ' onchange="_ocrReviewData[' + i + '].selected=this.checked;_ocrUpdateCount()" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;">' +
       '<input type="text" value="' + esc(r.surname) + '" placeholder="Surname" onchange="_ocrReviewData[' + i + '].surname=this.value.trim().toUpperCase()" style="width:105px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
       '<input type="text" value="' + esc(r.firstname) + '" placeholder="First" onchange="_ocrReviewData[' + i + '].firstname=this.value.trim().toUpperCase()" style="width:90px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
       '<input type="text" value="' + esc(r.cls) + '" placeholder="Class" onchange="_ocrReviewData[' + i + '].cls=this.value.trim()" style="flex:1;min-width:55px;margin:0;padding:4px 5px;font-size:0.77rem;">' +
       '<button onclick="_ocrDelRow(' + i + ')" style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:3px 6px;cursor:pointer;font-size:0.68rem;color:#dc2626;flex-shrink:0;">✕</button>' +
     '</div>'
   ).join('');
+  _ocrUpdateCount();
+}
+
+function _ocrUpdateCount() {
+  const n     = _ocrReviewData.filter(r => r.selected).length;
+  const total = _ocrReviewData.length;
+  const btn   = document.getElementById('ocr-confirm-btn');
+  if (btn)  btn.textContent  = '\u2705 Add ' + n + ' Student' + (n !== 1 ? 's' : '') + ' →';
+  const info = document.getElementById('ocr-review-info');
+  if (info) info.textContent = n + ' of ' + total + ' selected — edit names below, set class if known, then tap Add.';
 }
 
 function _ocrDelRow(i) {
   _ocrReviewData.splice(i, 1);
   _renderOcrReviewList();
-  const info = document.getElementById('ocr-review-info');
-  if (info) info.textContent = _ocrReviewData.length + ' students — review and set class before adding.';
 }
 
 function ocrSelectAll(checked) {
