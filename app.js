@@ -1062,63 +1062,61 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
         ocrOverlayStep('error', '⚠️ No Groq key — tap Settings → paste your key → Save', 100);
         resolve([]); return;
       }
-      // Pages 4+: throw a skip-marker into the catch block → lands at HuggingFace
-      if (skipGroq) { const _sk = new Error('hf-direct'); _sk.isSkip = true; throw _sk; }
-
-      try {
-        ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
-        const names = await groqVisionOCR(b64, mime);
-        if (names && names.length) {
-          ocrOverlayStep('done', '✅ ' + names.length + ' names found (page ' + pageNum + ')', 100);
-          resolve(names); return;
-        }
-        // Groq returned 0 names — not an error but also not useful
-        _lastOcrError = 'Groq returned 0 names — try a clearer photo';
-        ocrOverlayStep('error', '⚠️ Groq read the image but found no names — try clearer photo', 100);
-        resolve([]);
-      } catch (e) {
-        _lastOcrError = e.message || 'Groq Vision failed';
-        if (!e.isSkip) {
+      // Pages 1-3 use Groq. Pages 4+ (skipGroq=true) jump straight to HF.
+      // HF + OCR.space sit OUTSIDE the Groq try/catch so they are ALWAYS reachable.
+      if (!skipGroq) {
+        try {
+          ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
+          const names = await groqVisionOCR(b64, mime);
+          if (names && names.length) {
+            ocrOverlayStep('done', '✅ ' + names.length + ' names found (page ' + pageNum + ')', 100);
+            resolve(names); return;
+          }
+          _lastOcrError = 'Groq returned 0 names'; // fall through to HF
+        } catch (e) {
+          _lastOcrError = e.message || 'Groq Vision failed';
           console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
           if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
             ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
             resolve([]); return;
           }
+          // fall through to HF
         }
-        // ── HF Vision fallback ───────────────────────────────────────────────
-        try {
-          ocrOverlayStep('scan', '🤗 Trying HuggingFace Vision...', 70);
-          const hfResult = await hfVisionOCR(b64, mime);
-          if (hfResult && hfResult.length > 0) {
-            ocrOverlayStep('read', '🤗 HF: ' + hfResult.length + ' names (page ' + pageNum + ')', 100);
-            resolve(hfResult); return;
-          }
-        } catch (hfErr) {
-          const hfMsg = hfErr.message.includes('No HF API key')
-            ? '⚠️ No HF key in portal Settings — trying OCR.space'
-            : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying OCR.space');
-          console.warn('HF fallback:', hfErr.message);
-          ocrOverlayStep('scan', hfMsg, 80);
-        }
-        // ── OCR.space Engine 3 last resort ───────────────────────────────────
-        try {
-          const ocrNames = await ocrSpaceOCR(b64, mime);
-          if (ocrNames && ocrNames.length > 0) {
-            const mapped = ocrNames.map(name => {
-              const parts = name.trim().toUpperCase().split(/\s+/);
-              return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
-            }).filter(s => s.fullName.length >= 3);
-            if (mapped.length > 0) {
-              ocrOverlayStep('read', '📄 OCR.space: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
-              resolve(mapped); return;
-            }
-          }
-        } catch (ocrErr) {
-          console.warn('OCR.space fallback failed:', ocrErr.message);
-        }
-        ocrOverlayStep('error', '⚠️ All OCR failed: ' + _lastOcrError.slice(0, 60), 100);
-        resolve([]);
       }
+      // HF Vision (pages 4+ primary, or Groq fallback)
+      try {
+        const hfLabel = skipGroq ? 'HuggingFace scanning' : 'Trying HuggingFace';
+        ocrOverlayStep('scan', '🤗 ' + hfLabel + ' (page ' + pageNum + '/' + total + ')...', skipGroq ? 30 : 70);
+        const hfResult = await hfVisionOCR(b64, mime);
+        if (hfResult && hfResult.length > 0) {
+          ocrOverlayStep('read', '🤗 HF: ' + hfResult.length + ' names (page ' + pageNum + ')', 100);
+          resolve(hfResult); return;
+        }
+      } catch (hfErr) {
+        const hfMsg = hfErr.message.includes('No HF API key')
+          ? '⚠️ No HF key in portal Settings — trying OCR.space'
+          : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying OCR.space');
+        console.warn('HF fallback:', hfErr.message);
+        ocrOverlayStep('scan', hfMsg, 80);
+      }
+      // OCR.space Engine 3 last resort
+      try {
+        const ocrNames = await ocrSpaceOCR(b64, mime);
+        if (ocrNames && ocrNames.length > 0) {
+          const mapped = ocrNames.map(name => {
+            const parts = name.trim().toUpperCase().split(/\s+/);
+            return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
+          }).filter(s => s.fullName.length >= 3);
+          if (mapped.length > 0) {
+            ocrOverlayStep('read', '📄 OCR.space: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
+            resolve(mapped); return;
+          }
+        }
+      } catch (ocrErr) {
+        console.warn('OCR.space fallback failed:', ocrErr.message);
+      }
+      ocrOverlayStep('error', '⚠️ All OCR failed: ' + _lastOcrError.slice(0, 60), 100);
+      resolve([]);
     };
 
     reader.onerror = () => {
