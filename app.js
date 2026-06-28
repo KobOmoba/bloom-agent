@@ -578,38 +578,51 @@ function _proceedToStep3() {
 let _ocrReviewData = [];
 
 function openOcrReviewModal(parsedNames) {
-  _ocrReviewData = parsedNames.map(p => {
-    const full  = (p.name || '').trim().toUpperCase();
-    const parts = full.split(/\s+/);
-    return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', cls: p.class||'', selected: true };
-  });
-  const info = document.getElementById('ocr-review-info');
-  if (info) info.textContent = _ocrReviewData.length + ' students found — review names, set class, then tap Add Students.';
+  _ocrReviewData = (parsedNames || []).map(p => {
+    const nm = typeof p === 'string' ? p : (p.name || '');
+    return { name: nm.trim().toUpperCase(), cls: '', sel: true };
+  }).filter(r => r.name.length > 1);
   _renderOcrReviewList();
   openM('ocr-review-modal');
 }
 
 function _renderOcrReviewList() {
-  const c = document.getElementById('ocr-review-list'); if (!c) return;
-  c.innerHTML = _ocrReviewData.map((r, i) =>
-    '<div style="display:flex;gap:3px;align-items:center;padding:5px 2px;border-bottom:1px solid var(--border);">' +
-      '<input type="checkbox" ' + (r.selected?'checked':'') + ' onchange="_ocrReviewData[' + i + '].selected=this.checked;_ocrUpdateCount()" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;">' +
-      '<input type="text" value="' + esc(r.surname) + '" placeholder="Surname" onchange="_ocrReviewData[' + i + '].surname=this.value.trim().toUpperCase()" style="width:105px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
-      '<input type="text" value="' + esc(r.firstname) + '" placeholder="First" onchange="_ocrReviewData[' + i + '].firstname=this.value.trim().toUpperCase()" style="width:90px;flex-shrink:0;margin:0;padding:4px 5px;font-size:0.77rem;text-transform:uppercase;">' +
-      '<input type="text" value="' + esc(r.cls) + '" placeholder="Class" onchange="_ocrReviewData[' + i + '].cls=this.value.trim()" style="flex:1;min-width:55px;margin:0;padding:4px 5px;font-size:0.77rem;">' +
-      '<button onclick="_ocrDelRow(' + i + ')" style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:3px 6px;cursor:pointer;font-size:0.68rem;color:#dc2626;flex-shrink:0;">✕</button>' +
-    '</div>'
-  ).join('');
+  const c = document.getElementById('ocr-review-list');
+  if (!c) return;
+  while (c.firstChild) c.removeChild(c.firstChild);
+  for (let i = 0; i < _ocrReviewData.length; i++) {
+    const r = _ocrReviewData[i];
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:4px;align-items:center;padding:4px 2px;border-bottom:1px solid var(--border);';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = !!r.sel;
+    cb.style.cssText = 'width:18px;height:18px;flex-shrink:0;cursor:pointer;';
+    (function(idx){ cb.onchange = function(){ _ocrReviewData[idx].sel = this.checked; _ocrUpdateCount(); }; })(i);
+    const ni = document.createElement('input');
+    ni.type = 'text'; ni.value = r.name || '';
+    ni.style.cssText = 'flex:1;margin:0;padding:3px 6px;font-size:0.78rem;min-width:0;text-transform:uppercase;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    (function(idx){ ni.onchange = function(){ _ocrReviewData[idx].name = this.value.trim().toUpperCase(); }; })(i);
+    const ci = document.createElement('input');
+    ci.type = 'text'; ci.value = r.cls || ''; ci.placeholder = 'Class';
+    ci.style.cssText = 'width:64px;flex-shrink:0;margin:0;padding:3px 5px;font-size:0.74rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    (function(idx){ ci.onchange = function(){ _ocrReviewData[idx].cls = this.value.trim(); }; })(i);
+    const db = document.createElement('button');
+    db.textContent = '\u2715';
+    db.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:0.72rem;color:#dc2626;flex-shrink:0;';
+    (function(idx){ db.onclick = function(){ _ocrDelRow(idx); }; })(i);
+    row.appendChild(cb); row.appendChild(ni); row.appendChild(ci); row.appendChild(db);
+    c.appendChild(row);
+  }
   _ocrUpdateCount();
 }
 
 function _ocrUpdateCount() {
-  const n     = _ocrReviewData.filter(r => r.selected).length;
-  const total = _ocrReviewData.length;
-  const btn   = document.getElementById('ocr-confirm-btn');
-  if (btn)  btn.textContent  = '\u2705 Add ' + n + ' Student' + (n !== 1 ? 's' : '') + ' →';
+  const n = _ocrReviewData.filter(r => r.sel).length;
+  const tot = _ocrReviewData.length;
+  const btn  = document.getElementById('ocr-confirm-btn');
   const info = document.getElementById('ocr-review-info');
-  if (info) info.textContent = n + ' of ' + total + ' selected — edit names below, set class if known, then tap Add.';
+  if (btn)  btn.textContent  = '\u2705 Add ' + n + ' Student' + (n !== 1 ? 's' : '') + ' \u2192';
+  if (info) info.textContent = n + ' of ' + tot + ' selected \u2014 edit names, set class, then tap Add.';
 }
 
 function _ocrDelRow(i) {
@@ -618,21 +631,29 @@ function _ocrDelRow(i) {
 }
 
 function ocrSelectAll(checked) {
-  _ocrReviewData.forEach(r => r.selected = checked);
+  _ocrReviewData.forEach(r => r.sel = checked);
   _renderOcrReviewList();
 }
 
 function ocrSetClassAll() {
-  const cls = document.getElementById('ocr-class-all')?.value || ''; if (!cls) return;
-  _ocrReviewData.forEach(r => { if (r.selected) r.cls = cls; });
+  const cls = (document.getElementById('ocr-class-all')?.value || '').trim();
+  if (!cls) return;
+  _ocrReviewData.forEach(r => { if (r.sel) r.cls = cls; });
   _renderOcrReviewList();
 }
 
 function ocrConfirmImport() {
-  const sel = _ocrReviewData.filter(r => r.selected && (r.surname || r.firstname));
-  if (!sel.length) { alert('No students selected — tick at least one row.'); return; }
-  csvParsedNames = sel.map(r => ({ name: (r.surname + ' ' + r.firstname).trim(), class: r.cls || null }));
+  const sel = _ocrReviewData.filter(r => r.sel && r.name && r.name.length > 1);
+  if (!sel.length) { alert('Select at least one name.'); return; }
+  csvParsedNames = sel.map(r => ({ name: r.name, class: r.cls || null }));
   csvStudentCount = csvParsedNames.length;
+  const tier = TIERS_LIST.find(t => csvStudentCount <= t.max) || TIERS_LIST[4];
+  const comm = Math.round(tier.price * 0.20);
+  const qe = id => document.getElementById(id);
+  if (qe('csv-student-count')) qe('csv-student-count').textContent = csvStudentCount;
+  if (qe('csv-tier-name'))     qe('csv-tier-name').textContent     = tier.name;
+  if (qe('csv-school-pays'))   qe('csv-school-pays').textContent   = '\u20a6' + tier.price.toLocaleString('en-NG') + '/term';
+  if (qe('csv-your-comm'))     qe('csv-your-comm').textContent     = '\u20a6' + comm.toLocaleString('en-NG');
   closeM('ocr-review-modal');
   _proceedToStep3();
 }
@@ -1017,7 +1038,7 @@ function resizeImageForOCR(dataURL) {
   });
 }
 
-async function _readOnePage(file, pageNum, total, fbEl) {
+async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
   return new Promise(resolve => {
     const reader = new FileReader();
 
@@ -1036,11 +1057,13 @@ async function _readOnePage(file, pageNum, total, fbEl) {
 
       // ── Groq Vision (direct — no Cloudflare Worker) ───────────────────
       const groqKey = getGroqKey();
-      if (!groqKey) {
+      if (!groqKey && !skipGroq) {
         _lastOcrError = 'Groq API key not set — go to Settings and paste your key';
         ocrOverlayStep('error', '⚠️ No Groq key — tap Settings → paste your key → Save', 100);
         resolve([]); return;
       }
+      // Pages 4+: throw a skip-marker into the catch block → lands at HuggingFace
+      if (skipGroq) { const _sk = new Error('hf-direct'); _sk.isSkip = true; throw _sk; }
 
       try {
         ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
@@ -1055,10 +1078,12 @@ async function _readOnePage(file, pageNum, total, fbEl) {
         resolve([]);
       } catch (e) {
         _lastOcrError = e.message || 'Groq Vision failed';
-        console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
-        if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
-          ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
-          resolve([]); return;
+        if (!e.isSkip) {
+          console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
+          if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
+            ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
+            resolve([]); return;
+          }
         }
         // ── HF Vision fallback ───────────────────────────────────────────────
         try {
@@ -1331,18 +1356,23 @@ async function processImagesSequentially(files) {
   const _seen = new Set(); // cross-page dedup — same name on two pages only counted once
   // Inter-page delay to stay under Groq free-tier 6K TPM/min limit.
   // 15s gap means max ~3 pages touch any 60s window → ~4500 tokens, safely under 6K.
-  const INTER_PAGE_DELAY_S = 15;
+  // Pages 1-3: Groq (15s cooldown between them — stays under 6K TPM/min)
+  // Pages 4+:  HuggingFace direct (separate quota, only 5s cooldown needed)
+  // This eliminates the 30-second retry penalty Groq imposes on every 4th/7th page.
+  const GROQ_DELAY_S = 15;
+  const HF_DELAY_S   = 5;
   for (let i = 0; i < files.length; i++) {
     if (i > 0 && files.length > 1) {
-      // Countdown between pages — shows in the overlay so agent knows it's working
       const ld = document.getElementById('csv-loading');
-      for (let s = INTER_PAGE_DELAY_S; s > 0; s--) {
-        if (ld) ld.textContent = '⏳ Cooling down (' + s + 's) before scanning page ' + (i + 1) + ' of ' + files.length + '...';
+      const ds = i < 3 ? GROQ_DELAY_S : HF_DELAY_S;
+      for (let s = ds; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Cooling down (' + s + 's) before page ' + (i + 1) + ' of ' + files.length + ' (' + (i < 3 ? 'Groq' : 'HuggingFace') + ')...';
         await new Promise(r => setTimeout(r, 1000));
       }
     }
+    const skipGroq = (i >= 3);
     ocrOverlayShow(files[i].name);
-    const pageNames = await _readOnePage(files[i], i + 1, files.length, null);
+    const pageNames = await _readOnePage(files[i], i + 1, files.length, null, skipGroq);
     // Each entry is {surname, firstname, fullName} — deduplicate across pages
     pageNames.forEach(n => {
       const full = (n.fullName || (n.surname + ' ' + n.firstname)).trim().toUpperCase();
