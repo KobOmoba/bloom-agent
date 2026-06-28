@@ -756,6 +756,28 @@ async function hfVisionOCR(base64, mime) {
     );
     clearTimeout(timer);
   } catch(fe) { clearTimeout(timer); throw new Error('HF network error: ' + fe.message); }
+  // Cold start: HF returns 503 with estimated_time — wait then retry once
+  if (resp.status === 503) {
+    const ed = await resp.json().catch(() => ({}));
+    const wait = Math.min(Math.ceil(ed.estimated_time || 25), 45);
+    const ld = document.getElementById('csv-loading');
+    for (let s = wait; s > 0; s--) {
+      if (ld) ld.textContent = '\ud83e\udd17 HF model loading \u2014 ready in ' + s + 's...';
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    const ctrl2 = new AbortController();
+    const t2 = setTimeout(() => ctrl2.abort(), 45000);
+    try {
+      resp = await fetch(
+        'https://api-inference.huggingface.co/models/' + HF_OCR_MODEL + '/v1/chat/completions',
+        { method:'POST', signal:ctrl2.signal,
+          headers:{'Authorization':'Bearer '+hfKey,'Content-Type':'application/json'},
+          body: JSON.stringify({model:HF_OCR_MODEL,messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+base64}},{type:'text',text:GROQ_OCR_PROMPT}]}],max_tokens:600})
+        }
+      );
+      clearTimeout(t2);
+    } catch(fe2){ clearTimeout(t2); throw new Error('HF retry failed: '+fe2.message); }
+  }
   if (!resp.ok) {
     const ed = await resp.json().catch(() => ({}));
     throw new Error('HF ' + resp.status + ': ' + (ed.error?.message || resp.statusText));
