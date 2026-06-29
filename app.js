@@ -810,18 +810,29 @@ async function hfVisionOCR(base64, mime) {
 
 // ── OCR.space Engine 3 last resort (no key required, engine=3 is open source) ──
 async function ocrSpaceOCR(base64, mime) {
-  const fd = new FormData();
-  fd.append('base64Image', 'data:' + mime + ';base64,' + base64);
-  fd.append('language', 'eng');
-  fd.append('OCREngine', '3');
-  fd.append('isTable', 'true');
-  fd.append('apikey', 'helloworld');
-  const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: fd });
-  const data = await resp.json();
-  if (data.IsErroredOnProcessing) throw new Error('OCR.space: ' + (data.ErrorMessage?.[0] || 'error'));
-  const text = data.ParsedResults?.[0]?.ParsedText || '';
-  if (!text.trim()) throw new Error('OCR.space returned empty text');
-  return extractNamesFromText(text);
+  // Try Engine 3 first (open-source, fast). If it errors, retry with Engine 2 (cloud, more accurate).
+  const tryEngine = async (engine) => {
+    const fd = new FormData();
+    fd.append('base64Image', 'data:' + mime + ';base64,' + base64);
+    fd.append('language', 'eng');
+    fd.append('OCREngine', String(engine));
+    fd.append('isTable', 'true');
+    fd.append('apikey', 'helloworld');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 30000);
+    const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: fd, signal: ctrl.signal });
+    clearTimeout(t);
+    const data = await resp.json();
+    if (data.IsErroredOnProcessing) throw new Error('OCR.space E' + engine + ': ' + (data.ErrorMessage?.[0] || 'error'));
+    const text = (data.ParsedResults || []).map(r => r.ParsedText || '').join('\n');
+    if (!text.trim()) throw new Error('OCR.space E' + engine + ' returned empty text');
+    return extractNamesFromText(text);
+  };
+  try { return await tryEngine(3); }
+  catch(e3) {
+    console.warn('OCR.space E3 failed:', e3.message, '— trying E2');
+    return await tryEngine(2);  // Engine 2 fallback
+  }
 }
 
 async function groqVisionOCR(base64, mime, _retry) {
@@ -1086,7 +1097,8 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       }
       // Pages 1-3 use Groq. Pages 4+ (skipGroq=true) jump straight to HF.
       // HF + OCR.space sit OUTSIDE the Groq try/catch so they are ALWAYS reachable.
-      if (!skipGroq) {
+      if (!skipGroq || !getHfKey()) {
+        // Pages 4+: skipGroq=true, but fall back to Groq when HF key is not set
         try {
           ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
           const names = await groqVisionOCR(b64, mime);
