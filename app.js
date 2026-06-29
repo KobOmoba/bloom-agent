@@ -1076,6 +1076,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
     const reader = new FileReader();
 
     reader.onload = async ev => {
+      try {
       // Resize to ≤400px — reduces image tokens to stay under 6K TPM free-tier limit
       const imgData = await resizeImageForOCR(ev.target.result);
       const b64    = imgData.split(',')[1];
@@ -1085,7 +1086,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       }
 
       ocrOverlayThumb(imgData);
-      ocrOverlayStep('load', 'Image loaded — sending to Groq Vision...', 20);
+      ocrOverlayStep('load', skipGroq ? '🤗 Preparing HuggingFace (page ' + pageNum + ')...' : 'Image loaded — sending to Groq Vision...', 20);
       ocrOverlayPages(pageNum, total);
 
       // ── Groq Vision (direct — no Cloudflare Worker) ───────────────────
@@ -1097,7 +1098,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       }
       // Pages 1-3 use Groq. Pages 4+ (skipGroq=true) jump straight to HF.
       // HF + OCR.space sit OUTSIDE the Groq try/catch so they are ALWAYS reachable.
-      if (!skipGroq || !getHfKey()) {
+      if (!skipGroq || !getHFKey()) {
         // Pages 4+: skipGroq=true, but fall back to Groq when HF key is not set
         try {
           ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
@@ -1151,6 +1152,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       }
       ocrOverlayStep('error', '⚠️ All OCR failed: ' + _lastOcrError.slice(0, 60), 100);
       resolve([]);
+      } catch(fatal) { console.error('_readOnePage fatal:', fatal.message||String(fatal)); resolve([]); }
     };
 
     reader.onerror = () => {
