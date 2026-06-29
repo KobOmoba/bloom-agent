@@ -1394,17 +1394,15 @@ async function processImagesSequentially(files) {
   // Pages 4+:  HuggingFace direct (separate quota, only 5s cooldown needed)
   // This eliminates the 30-second retry penalty Groq imposes on every 4th/7th page.
   const GROQ_DELAY_S = 15;
-  const HF_DELAY_S   = 5;
   for (let i = 0; i < files.length; i++) {
     if (i > 0 && files.length > 1) {
       const ld = document.getElementById('csv-loading');
-      const ds = i < 3 ? GROQ_DELAY_S : HF_DELAY_S;
-      for (let s = ds; s > 0; s--) {
-        if (ld) ld.textContent = '⏳ Cooling down (' + s + 's) before page ' + (i + 1) + ' of ' + files.length + ' (' + (i < 3 ? 'Groq' : 'HuggingFace') + ')...';
+      for (let s = GROQ_DELAY_S; s > 0; s--) {
+        if (ld) ld.textContent = '⏳ Cooling down (' + s + 's) before page ' + (i + 1) + ' of ' + files.length + '...';
         await new Promise(r => setTimeout(r, 1000));
       }
     }
-    const skipGroq = (i >= 3);
+    const skipGroq = false;
     ocrOverlayShow(files[i].name);
     const pageNames = await _readOnePage(files[i], i + 1, files.length, null, skipGroq);
     // Each entry is {surname, firstname, fullName} — deduplicate across pages
