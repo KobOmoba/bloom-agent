@@ -101,3 +101,7 @@ td{padding:0.6rem 0.7rem;border-bottom:1px solid var(--border);color:var(--text)
 .stat-l{font-size:0.67rem;color:var(--sub);text-transform:uppercase;margin-top:2px;}
 
 @media(min-width:480px){.wrap{max-width:560px;}}
+
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:8000;justify-content:center;align-items:flex-start;padding:1rem;}
+.modal.on{display:flex;}
+.modal .mbox{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:480px;max-height:92vh;overflow-y:auto;}
