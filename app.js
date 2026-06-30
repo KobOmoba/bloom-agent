@@ -59,6 +59,8 @@ window.addEventListener('offline', ()=>SQ.ping());
 // ── Helpers ────────────────────────────────────────────────────────────────
 const esc = s => { if(!s)return''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; };
 const $ = id => document.getElementById(id);
+const openM = id => { const e = document.getElementById(id); if (e) e.classList.add('on'); };
+const closeM = id => { const e = document.getElementById(id); if (e) e.classList.remove('on'); };
 const fmt = n => '₦'+Number(n).toLocaleString('en-NG');
 
 // ── Login ──────────────────────────────────────────────────────────────────
@@ -588,7 +590,7 @@ function openOcrReviewModal(parsedNames) {
 
 function _renderOcrReviewList() {
   const c = document.getElementById('ocr-review-list');
-  if (!c) return;
+  if (!c) { console.error('[OCR Review] #ocr-review-list not found in DOM'); return; }
   while (c.firstChild) c.removeChild(c.firstChild);
   for (let i = 0; i < _ocrReviewData.length; i++) {
     const r = _ocrReviewData[i];
