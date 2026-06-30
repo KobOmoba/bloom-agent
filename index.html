@@ -288,7 +288,7 @@
   </nav>
 </div>
 
-<script src="app.js?v=20260629c"></script>
+<script src="app.js?v=20260629d"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
@@ -371,10 +371,9 @@
     <!-- Column headers -->
     <div style="display:flex;gap:4px;padding:4px 4px 6px;border-bottom:2px solid var(--brand);font-size:0.7rem;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:0.04em;">
       <span style="width:22px;flex-shrink:0;"></span>
-      <span style="width:110px;flex-shrink:0;">Surname</span>
-      <span style="width:100px;flex-shrink:0;">First Name</span>
-      <span style="width:68px;flex-shrink:0;">Class</span>
-      <span style="flex:1;"></span>
+      <span style="flex:1;">Name</span>
+      <span style="width:64px;flex-shrink:0;">Class</span>
+      <span style="width:30px;flex-shrink:0;"></span>
     </div>
 
     <!-- Name list (populated by JS) -->
