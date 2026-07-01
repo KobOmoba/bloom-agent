@@ -774,7 +774,7 @@ async function hfVisionOCR(base64, mime) {
         'https://api-inference.huggingface.co/models/' + HF_OCR_MODEL + '/v1/chat/completions',
         { method:'POST', signal:ctrl2.signal,
           headers:{'Authorization':'Bearer '+hfKey,'Content-Type':'application/json'},
-          body: JSON.stringify({model:HF_OCR_MODEL,messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+base64}},{type:'text',text:GROQ_OCR_PROMPT}]}],max_tokens:600})
+          body: JSON.stringify({model:HF_OCR_MODEL,messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+base64}},{type:'text',text:GROQ_OCR_PROMPT}]}],temperature:0.2,max_tokens:600})
         }
       );
       clearTimeout(t2);
