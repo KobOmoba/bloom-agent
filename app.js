@@ -605,12 +605,12 @@ function _renderOcrReviewList() {
     cb.style.cssText = 'width:18px;height:18px;flex-shrink:0;cursor:pointer;';
     (function(idx){ cb.onchange = function(){ _ocrReviewData[idx].sel = this.checked; _ocrUpdateCount(); }; })(i);
     const ni = document.createElement('input');
-    ni.type = 'text'; ni.value = r.name || '';
-    ni.style.cssText = 'flex:1;margin:0;padding:3px 6px;font-size:0.78rem;min-width:0;text-transform:uppercase;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    ni.type = 'text'; ni.value = r.name || ''; ni.autocomplete = 'off'; ni.setAttribute('autocapitalize','off');
+    ni.style.cssText = 'flex:1;margin:0;padding:3px 6px;font-size:0.78rem;min-width:0;text-transform:uppercase;border:1px solid #2d4562;border-radius:6px;background:#0f1d2e !important;color:#f0f6ff !important;-webkit-text-fill-color:#f0f6ff;caret-color:#f0f6ff;';
     (function(idx){ ni.onchange = function(){ _ocrReviewData[idx].name = this.value.trim().toUpperCase(); }; })(i);
     const ci = document.createElement('input');
-    ci.type = 'text'; ci.value = r.cls || ''; ci.placeholder = 'Class';
-    ci.style.cssText = 'width:64px;flex-shrink:0;margin:0;padding:3px 5px;font-size:0.74rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    ci.type = 'text'; ci.value = r.cls || ''; ci.placeholder = 'Class'; ci.autocomplete = 'off';
+    ci.style.cssText = 'width:64px;flex-shrink:0;margin:0;padding:3px 5px;font-size:0.74rem;border:1px solid #2d4562;border-radius:6px;background:#0f1d2e !important;color:#f0f6ff !important;-webkit-text-fill-color:#f0f6ff;caret-color:#f0f6ff;';
     (function(idx){ ci.onchange = function(){ _ocrReviewData[idx].cls = this.value.trim(); }; })(i);
     const db = document.createElement('button');
     db.textContent = '\u2715';
