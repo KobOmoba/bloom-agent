@@ -1014,27 +1014,26 @@ function ocrOverlayThumb(dataUrl) {
 }
 
 function ocrOverlayStep(step, status, progress) {
-  // step: 'load' | 'upload' | 'read' | 'done' | 'error'
+  // step: 'load' | 'upload'/'scan' | 'read' | 'done' | 'error'
+  const map = { load: 'load', upload: 'upload', scan: 'upload', read: 'read', done: 'done', error: 'done' };
+  const key = map[step] || step;
+  const row  = document.getElementById('ocr-step-' + key);
+  const icon = document.getElementById('ocr-step-' + key + '-icon');
+  const text = document.getElementById('ocr-step-' + key + '-text');
+  if (row)  row.style.color = step === 'error' ? '#f87171' : '#6366f1';
+  if (icon) icon.textContent = step === 'error' ? '⚠️' : (step === 'done' ? '✅' : '🔍');
+  if (text && status) text.textContent = status;
   const bar = document.getElementById('ocr-bar');
-  const st  = document.getElementById('ocr-status');
-  if (bar && progress !== undefined) bar.style.width = progress + '%';
-  if (st  && status)  st.textContent = status;
-
-  const stepMap = { load: 0, upload: 1, read: 2, done: 3 };
-  const stepIdx = stepMap[step] ?? -1;
-  ['load','upload','read','done'].forEach((s, i) => {
-    const icon = document.getElementById(`ocr-step-${s}-icon`);
-    const row  = document.getElementById(`ocr-step-${s}`);
-    if (!icon || !row) return;
-    if (i < stepIdx)      { icon.textContent = '✅'; row.style.color = '#4ade80'; }
-    else if (i === stepIdx) {
-      if (step === 'error') { icon.textContent = '❌'; row.style.color = '#f87171'; }
-      else { icon.textContent = '🔄'; row.style.color = '#818cf8'; }
-    }
-    else { row.style.color = '#94a3b8'; }
+  if (bar) {
+    bar.style.width = Math.min(progress || 0, 100) + '%';
+    if (step === 'error') bar.style.background = 'linear-gradient(90deg,#f87171,#dc2626)';
+    if (step === 'done')  bar.style.background = 'linear-gradient(90deg,#34d399,#10b981)';
+  }
+  ['load','upload','read','done'].forEach(s => {
+    if (s === key) return;
+    const r = document.getElementById('ocr-step-' + s);
+    if (r && (progress || 0) >= 100 && step !== 'error') r.style.color = '#34d399';
   });
-  if (step === 'done')  { if (bar) bar.style.width = '100%'; if (bar) bar.style.background = 'linear-gradient(90deg,#22c55e,#4ade80)'; }
-  if (step === 'error') { if (bar) bar.style.background = '#ef4444'; }
 }
 
 function ocrOverlayPages(cur, total) {
