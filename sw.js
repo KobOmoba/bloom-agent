@@ -1,5 +1,5 @@
 // EduBloom — Bloom Agent Service Worker
-const CACHE_NAME   = 'edubloom-agent-v3';
+const CACHE_NAME   = 'edubloom-agent-v4';
 const SHELL_ASSETS = [
   './',
   './index.html',
