@@ -712,6 +712,99 @@ const AARINAT_OCR_URL = 'https://aarinat-ocr.aarinat-company-limited.workers.dev
 const GROQ_KEY_STORAGE = 'groq_api_key';
 let _lastOcrError = '';
 function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_KEY_STORAGE) || ''; }
+
+// ── Shared Groq text caller — for the 4 sales/onboarding AI assistants below ──
+async function groqChatText(prompt, maxTokens) {
+  const apiKey = getGroqKey();
+  if (!apiKey) throw new Error('No Groq key — add one in Settings');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let resp;
+  try {
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.65,
+        max_tokens: maxTokens || 350
+      })
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    throw new Error(e.name === 'AbortError' ? 'Groq timed out — try again' : 'Network error — check connection');
+  }
+  clearTimeout(timer);
+  if (!resp.ok) throw new Error('Groq API error ' + resp.status);
+  const data = await resp.json();
+  return (data.choices?.[0]?.message?.content || '').trim();
+}
+
+// ── Agent 1: School Scout AI — where/how to find schools worth visiting today ──
+async function runScoutAI() {
+  const el = document.getElementById('scout-result');
+  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  const area = prompt('Which area, town or LGA are you scouting today?');
+  if (!area) return;
+  if (el) el.textContent = '🔍 Thinking...';
+  try {
+    const text = await groqChatText(
+      'You are a field sales coach for EduBloom, a Nigerian school management app. An agent is scouting for private/Islamic/nursery schools in "' + area + '" today. Give: 1) 3 concrete places/times to find school proprietors there today (specific to Nigerian context — market days, morning drop-off, notice boards, etc), 2) a one-line opener to say to a school gatekeeper, 3) 2 quick qualifying questions to check the school is a good fit (uses paper registers, 50+ students). Under 120 words total, short plain lines, no markdown headers or asterisks.',
+      350
+    );
+    if (el) el.textContent = text;
+  } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
+}
+
+// ── Agent 2: Pitch Coach AI — tailored spoken pitch per school type ──
+async function runPitchCoachAI() {
+  const el = document.getElementById('pitch-result');
+  const type = document.getElementById('pitch-school-type')?.value;
+  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!type) { if (el) el.textContent = '⚠️ Select a school type first.'; return; }
+  if (el) el.textContent = '🎯 Thinking...';
+  try {
+    const text = await groqChatText(
+      'You are a sales coach for EduBloom, a Nigerian school management app (attendance, fee collection via BloomCollect, report cards, automated parent WhatsApp safety alerts). Write a short natural spoken sales pitch (under 90 words) an agent can say to the proprietor of a "' + type + '" in Nigeria to get them interested in a free demo. Conversational tone, no markdown or asterisks, mention 1-2 benefits most relevant to this school type.',
+      300
+    );
+    if (el) el.textContent = text;
+  } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
+}
+
+// ── Agent 3: Objection Handler AI — confident replies to pushback ──
+async function runObjectionAI() {
+  const el = document.getElementById('objection-result');
+  const obj = document.getElementById('objection-type')?.value;
+  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!obj) { if (el) el.textContent = '⚠️ Select an objection first.'; return; }
+  if (el) el.textContent = '🛡️ Thinking...';
+  try {
+    const text = await groqChatText(
+      'You are a sales coach for EduBloom, a Nigerian school management app. A school proprietor just said: "' + obj + '". Give the agent a short, confident, respectful reply (under 80 words) to overcome this objection, natural spoken Nigerian English, no markdown or asterisks.',
+      250
+    );
+    if (el) el.textContent = text;
+  } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
+}
+
+// ── Agent 4: Follow-up Writer AI — WhatsApp messages that get replies ──
+async function runFollowupAI() {
+  const el = document.getElementById('followup-result');
+  const scenario = document.getElementById('followup-scenario')?.value;
+  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!scenario) { if (el) el.textContent = '⚠️ Select a scenario first.'; return; }
+  if (el) el.textContent = '📲 Thinking...';
+  try {
+    const text = await groqChatText(
+      'Write a short WhatsApp follow-up message (under 60 words) from an EduBloom sales agent to a school principal. Scenario: "' + scenario + '". Warm professional Nigerian tone, include a clear next step or call-to-action, no markdown or asterisks, no bracket placeholders.',
+      200
+    );
+    if (el) el.textContent = text;
+  } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
+}
 const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
 
 const GROQ_OCR_PROMPT = `You are reading a Nigerian school attendance/fee register photo.
