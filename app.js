@@ -530,12 +530,16 @@ function renderCountResult(names) {
   const dot    = document.getElementById('pipe-step-dot');
   if (scan)   scan.style.display   = 'none';
   if (result) result.style.display = 'block';
-  if (label)  label.textContent    = 'STEP 2 — Confirm Student Count';
+  if (label)  label.textContent    = 'STEP 2 — Review & Edit Names';
   if (dot)    dot.style.background = '#34d399';
 
   // Also auto-fill the student count field
   const scount = document.getElementById('s-count');
   if (scount) { scount.value = csvStudentCount; autoTier(); }
+
+  // Immediately show the FULL editable name list — no extra tap required.
+  // Small delay lets the "done scanning" state render first for a smooth transition.
+  setTimeout(() => { openOcrReviewModal(csvParsedNames); }, 250);
 }
 
 function pipelineReset() {
