@@ -614,7 +614,7 @@ function _renderOcrReviewList() {
     (function(idx){ ci.onchange = function(){ _ocrReviewData[idx].cls = this.value.trim(); }; })(i);
     const db = document.createElement('button');
     db.textContent = '\u2715';
-    db.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:0.72rem;color:#dc2626;flex-shrink:0;';
+    db.style.cssText = 'width:auto;display:inline-block;flex:0 0 auto;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:0.72rem;color:#dc2626;flex-shrink:0;';
     (function(idx){ db.onclick = function(){ _ocrDelRow(idx); }; })(i);
     row.appendChild(cb); row.appendChild(ni); row.appendChild(ci); row.appendChild(db);
     c.appendChild(row);
