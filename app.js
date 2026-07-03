@@ -742,12 +742,82 @@ async function groqChatText(prompt, maxTokens) {
   return (data.choices?.[0]?.message?.content || '').trim();
 }
 
-// ── Agent 1: School Scout AI — where/how to find schools worth visiting today ──
+// ── Agent 1: School Scout AI — real GPS map of schools nearby, with fallback ──
+let _scoutLeafletMap = null;
+
 async function runScoutAI() {
   const el = document.getElementById('scout-result');
+  const mapEl = document.getElementById('scout-map');
   if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (mapEl) mapEl.style.display = 'none';
+  if (!navigator.geolocation) { if (el) el.textContent = '📍 Location not supported on this device — using manual mode.'; return runScoutAIFallback(); }
+
+  if (el) el.textContent = '📍 Getting your location...';
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
+      if (el) el.textContent = '🔍 Searching the map for schools nearby...';
+      try {
+        const schools = await findNearbySchools(lat, lon, 3000);
+        if (!schools.length) {
+          if (el) el.textContent = '📍 No schools tagged on the map within 10km of you yet — this area may not be well mapped. Switching to AI tips...';
+          return runScoutAIFallback();
+        }
+        renderScoutMap(lat, lon, schools);
+        const names = schools.slice(0, 8).map(s => s.name).join(', ');
+        if (el) el.textContent = '📍 Found ' + schools.length + (schools.length > 1 ? ' schools' : ' school') + ' nearby — tap a pin for the name.\n\nGenerating a visit plan...';
+        try {
+          const tips = await groqChatText(
+            'You are a field sales coach for EduBloom, a Nigerian school management app. An agent is standing near these schools right now: ' + names + '. Give a short prioritized visit plan (under 100 words): which 2-3 to try first and why, plus a one-line opener for the gatekeeper. No markdown or asterisks.',
+            300
+          );
+          if (el) el.textContent = '📍 Found ' + schools.length + (schools.length > 1 ? ' schools' : ' school') + ' nearby — tap a pin for the name.\n\n' + tips;
+        } catch (e2) {
+          if (el) el.textContent = '📍 Found ' + schools.length + (schools.length > 1 ? ' schools' : ' school') + ' nearby — tap a pin for the name.';
+        }
+      } catch (e) {
+        if (el) el.textContent = '⚠️ Map lookup failed — switching to AI tips...';
+        return runScoutAIFallback();
+      }
+    },
+    () => { if (el) el.textContent = '📍 Location access denied — using manual mode.'; runScoutAIFallback(); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+  );
+}
+
+// Queries free OpenStreetMap data — no Google billing/API key needed. Widens radius if nothing found.
+async function findNearbySchools(lat, lon, radius) {
+  const query = '[out:json][timeout:20];(node["amenity"="school"](around:' + radius + ',' + lat + ',' + lon + ');way["amenity"="school"](around:' + radius + ',' + lat + ',' + lon + ');node["amenity"="college"](around:' + radius + ',' + lat + ',' + lon + '););out center 30;';
+  const resp = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+  if (!resp.ok) throw new Error('Map service unavailable');
+  const data = await resp.json();
+  const items = (data.elements || []).map(elm => {
+    const eLat = elm.lat || (elm.center && elm.center.lat);
+    const eLon = elm.lon || (elm.center && elm.center.lon);
+    const name = (elm.tags && elm.tags.name) || 'Unnamed school';
+    return (eLat && eLon) ? { name, lat: eLat, lon: eLon } : null;
+  }).filter(Boolean);
+  if (!items.length && radius < 10000) return findNearbySchools(lat, lon, radius * 2.5);
+  return items;
+}
+
+function renderScoutMap(lat, lon, schools) {
+  const mapEl = document.getElementById('scout-map');
+  if (!mapEl || typeof L === 'undefined') return;
+  mapEl.style.display = 'block';
+  if (_scoutLeafletMap) { _scoutLeafletMap.remove(); _scoutLeafletMap = null; }
+  _scoutLeafletMap = L.map('scout-map').setView([lat, lon], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(_scoutLeafletMap);
+  L.marker([lat, lon]).addTo(_scoutLeafletMap).bindPopup('📍 You').openPopup();
+  schools.forEach(s => { L.marker([s.lat, s.lon]).addTo(_scoutLeafletMap).bindPopup('🏫 ' + s.name); });
+  setTimeout(() => { if (_scoutLeafletMap) _scoutLeafletMap.invalidateSize(); }, 200);
+}
+
+// Fallback when GPS is denied/unsupported or no map data exists for the area
+async function runScoutAIFallback() {
+  const el = document.getElementById('scout-result');
   const area = prompt('Which area, town or LGA are you scouting today?');
-  if (!area) return;
+  if (!area) { if (el) el.textContent = ''; return; }
   if (el) el.textContent = '🔍 Thinking...';
   try {
     const text = await groqChatText(
