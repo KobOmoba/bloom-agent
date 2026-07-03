@@ -876,6 +876,7 @@ async function runFollowupAI() {
   } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
 }
 const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
+let _groqRateLimitedThisSession = false; // once Groq hits an org-wide rate limit, skip it for remaining pages this scan
 
 const GROQ_OCR_PROMPT = `You are reading a Nigerian school attendance/fee register photo.
 Columns: SERIAL NO | SURNAME | FIRST NAME | (other columns — ignore them).
@@ -1067,6 +1068,7 @@ async function groqVisionOCR(base64, mime, _retry) {
     if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
       if (_retry >= 2) {
         const errData = await resp.json().catch(() => ({}));
+        if (resp.status === 429) _groqRateLimitedThisSession = true; // stop hammering Groq for the rest of this scan
         throw new Error((errData.error && errData.error.message) || 'Groq unavailable — page skipped, try rescanning.');
       }
       const is429 = resp.status === 429;
@@ -1145,12 +1147,14 @@ function ocrOverlayShow(filename) {
   if (!el) return;
   el.style.display = 'flex';
   // Reset all steps
+  const defaultText = { load: 'Loading image...', upload: 'Uploading to cloud OCR', read: 'Reading names from image', done: 'Done' };
   ['load','upload','read','done'].forEach(s => {
     const icon = document.getElementById(`ocr-step-${s}-icon`);
     const text = document.getElementById(`ocr-step-${s}-text`);
     const row  = document.getElementById(`ocr-step-${s}`);
     if (icon) icon.textContent = { load:'⏳', upload:'☁️', read:'🔍', done:'✅' }[s];
     if (row)  row.style.color = '#94a3b8';
+    if (text) text.textContent = defaultText[s]; // clear stale text from a previous scan
   });
   const bar = document.getElementById('ocr-bar');
   if (bar) bar.style.width = '0%';
@@ -1562,6 +1566,7 @@ async function processImagesSequentially(files) {
   // Pages 4+:  HuggingFace direct (separate quota, only 5s cooldown needed)
   // This eliminates the 30-second retry penalty Groq imposes on every 4th/7th page.
   const GROQ_DELAY_S = 15;
+  _groqRateLimitedThisSession = false; // fresh scan — give Groq another chance
   for (let i = 0; i < files.length; i++) {
     if (i > 0 && files.length > 1) {
       const ld = document.getElementById('csv-loading');
@@ -1570,7 +1575,7 @@ async function processImagesSequentially(files) {
         await new Promise(r => setTimeout(r, 1000));
       }
     }
-    const skipGroq = false;
+    const skipGroq = _groqRateLimitedThisSession;
     ocrOverlayShow(files[i].name);
     const pageNames = await _readOnePage(files[i], i + 1, files.length, null, skipGroq);
     // Each entry is {surname, firstname, fullName} — deduplicate across pages
