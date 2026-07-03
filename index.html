@@ -11,6 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#7c3aed">
   <link rel="apple-touch-icon" href="icon-192x192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 </head>
 <body>
 
@@ -175,8 +176,9 @@
             <div style="width:38px;height:38px;background:#7c3aed;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🔍</div>
             <div><div style="font-weight:700;font-size:0.88rem;">School Scout AI</div><div style="font-size:0.72rem;color:var(--sub);">Finds schools in your area ready to onboard</div></div>
           </div>
-          <div id="scout-result" style="font-size:0.8rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;"></div>
-          <button class="btn-brand btn-small" onclick="runScoutAI()" style="font-size:0.78rem;">🔍 Scout My Area</button>
+          <div id="scout-map" style="width:100%;height:220px;border-radius:12px;overflow:hidden;margin-bottom:0.6rem;display:none;background:#0f0f1a;"></div>
+          <div id="scout-result" style="font-size:0.8rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
+          <button class="btn-brand btn-small" onclick="runScoutAI()" style="font-size:0.78rem;">📍 Scout My Area</button>
         </div>
 
         <!-- Agent 2: Pitch Coach -->
@@ -289,6 +291,7 @@
   </nav>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="app.js?v=20260701a"></script>
   <script>
     if('serviceWorker' in navigator){
