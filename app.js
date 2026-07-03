@@ -191,23 +191,25 @@ function startApp(){
 }
 
 async function _fetchGroqKeyFromFirestore() {
-  if (!db) return;
   try {
-    const snap = await db.collection('admin_settings').doc('main').get();
-    if (snap.exists) {
-      const d = snap.data();
-      const groqKey = d.groqApiKey || '';
-      if (groqKey) {
-        window.GROQ_API_KEY = groqKey;
-        localStorage.setItem(GROQ_KEY_STORAGE, groqKey);
-        console.log('✅ Groq key loaded from Firestore');
-      }
-      const hfKey = d.hfApiKey || '';
-      if (hfKey) {
-        window.HF_API_KEY = hfKey;
-        localStorage.setItem(HF_KEY_STORAGE, hfKey);
-        console.log('✅ HF key loaded from Firestore');
-      }
+    const phone = (agent && agent.phone) || '';
+    if (!phone) return;
+    const res = await fetch('https://superagent-626f0107.base44.app/functions/getEduBloomKeys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'agent', id: phone })
+    });
+    if (!res.ok) return; // fall back to whatever's cached in localStorage
+    const d = await res.json();
+    if (d.groqApiKey) {
+      window.GROQ_API_KEY = d.groqApiKey;
+      localStorage.setItem(GROQ_KEY_STORAGE, d.groqApiKey);
+      console.log('✅ Groq key loaded via secure proxy');
+    }
+    if (d.hfApiKey) {
+      window.HF_API_KEY = d.hfApiKey;
+      localStorage.setItem(HF_KEY_STORAGE, d.hfApiKey);
+      console.log('✅ HF key loaded via secure proxy');
     }
   } catch(e) { /* offline — use whatever is in localStorage */ }
 }
