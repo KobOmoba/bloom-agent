@@ -1664,3 +1664,5 @@ function saveGroqKey() {
   alert('✅ Groq key saved! It will activate automatically if AariNAT AI is unavailable.');
   renderSettingsProfile();
 }
+
+// build-retrigger 1783047742
