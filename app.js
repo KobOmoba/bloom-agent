@@ -1626,18 +1626,13 @@ function renderSettingsProfile() {
       </div>
 
       <div style="background:var(--card);border-radius:16px;padding:1.2rem;margin-bottom:1rem;">
-        <div style="font-size:0.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">Groq API Key (Backup Scanner)</div>
-        <div style="font-size:0.78rem;color:var(--sub);margin-bottom:0.8rem;">
-          AariNAT AI is the primary scanner. If it's unavailable, Groq Vision takes over automatically.<br><br>
-          Get a free key at <a href="https://console.groq.com" target="_blank" style="color:#818cf8;">console.groq.com</a> → API Keys → Create API Key
+        <div style="font-size:0.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">Register Scanner</div>
+        <div style="font-size:0.78rem;color:var(--sub);margin-bottom:0.6rem;">
+          OCR keys are managed centrally and load automatically when you log in — nothing to set up here.
         </div>
-        <div style="font-size:0.82rem;color:#94a3b8;margin-bottom:0.5rem;">Current: ${maskedKey || '<span style="color:#f87171;">Not set — backup scanner disabled</span>'}</div>
-        <input id="groq-key-input" type="text" placeholder="Paste your Groq API key here..."
-          style="width:100%;padding:0.7rem;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:white;font-size:0.85rem;box-sizing:border-box;"
-          value="">
-        <button onclick="saveGroqKey()" style="margin-top:0.6rem;width:100%;padding:0.7rem;border-radius:10px;border:none;background:linear-gradient(135deg,#6366f1,#818cf8);color:white;font-weight:700;font-size:0.85rem;cursor:pointer;">
-          💾 Save Groq Key
-        </button>
+        <div style="font-size:0.82rem;color:${groqKey ? '#4ade80' : '#f87171'};">
+          ${groqKey ? '✅ Scanner ready' : '⚠️ Not loaded yet — reopen the app or check your connection'}
+        </div>
       </div>
 
       <div style="background:var(--card);border-radius:16px;padding:1.2rem;margin-bottom:1rem;">
@@ -1649,27 +1644,12 @@ function renderSettingsProfile() {
 
       <div style="text-align:center;font-size:0.7rem;color:var(--sub);padding:1rem 0;">
         Educational Bloom Agent App · Built by AariNAT<br>
-        v2.2 · OCR: AariNAT AI + Groq Vision (Llama 4 Scout)
+        v2.3 · OCR: AariNAT AI + Groq Vision (auto-configured)
       </div>
     </div>
   `;
 }
 
-function saveGroqKey() {
-  const input = document.getElementById('groq-key-input');
-  if (!input) return;
-  const key = input.value.trim();
-  if (!key) {
-    localStorage.removeItem(GROQ_KEY_STORAGE);
-    delete window.GROQ_API_KEY;
-    alert('Groq key removed. AariNAT AI will still work as your primary scanner.');
-    renderSettingsProfile();
-    return;
-  }
-  localStorage.setItem(GROQ_KEY_STORAGE, key);
-  window.GROQ_API_KEY = key;
-  alert('✅ Groq key saved! It will activate automatically if AariNAT AI is unavailable.');
-  renderSettingsProfile();
-}
+// saveGroqKey() removed — keys now auto-load via secure proxy on login, no manual entry needed.
 
 // build-retrigger 1783047742
