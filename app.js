@@ -715,10 +715,17 @@ const GROQ_KEY_STORAGE = 'groq_api_key';
 let _lastOcrError = '';
 function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_KEY_STORAGE) || ''; }
 
+// Retries the secure proxy once if the key never loaded (e.g. proxy was down at login)
+async function ensureGroqKey() {
+  if (getGroqKey()) return getGroqKey();
+  if (typeof _fetchGroqKeyFromFirestore === 'function') await _fetchGroqKeyFromFirestore().catch(() => {});
+  return getGroqKey();
+}
+
 // ── Shared Groq text caller — for the 4 sales/onboarding AI assistants below ──
 async function groqChatText(prompt, maxTokens) {
-  const apiKey = getGroqKey();
-  if (!apiKey) throw new Error('No Groq key — add one in Settings');
+  const apiKey = await ensureGroqKey();
+  if (!apiKey) throw new Error('AI features are temporarily unavailable — check your connection and try again shortly.');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   let resp;
@@ -750,7 +757,7 @@ let _scoutLeafletMap = null;
 async function runScoutAI() {
   const el = document.getElementById('scout-result');
   const mapEl = document.getElementById('scout-map');
-  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!(await ensureGroqKey())) { if (el) el.textContent = '⚠️ AI features temporarily unavailable — check your connection and try again.'; return; }
   if (mapEl) mapEl.style.display = 'none';
   if (!navigator.geolocation) { if (el) el.textContent = '📍 Location not supported on this device — using manual mode.'; return runScoutAIFallback(); }
 
@@ -834,7 +841,7 @@ async function runScoutAIFallback() {
 async function runPitchCoachAI() {
   const el = document.getElementById('pitch-result');
   const type = document.getElementById('pitch-school-type')?.value;
-  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!(await ensureGroqKey())) { if (el) el.textContent = '⚠️ AI features temporarily unavailable — check your connection and try again.'; return; }
   if (!type) { if (el) el.textContent = '⚠️ Select a school type first.'; return; }
   if (el) el.textContent = '🎯 Thinking...';
   try {
@@ -850,7 +857,7 @@ async function runPitchCoachAI() {
 async function runObjectionAI() {
   const el = document.getElementById('objection-result');
   const obj = document.getElementById('objection-type')?.value;
-  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!(await ensureGroqKey())) { if (el) el.textContent = '⚠️ AI features temporarily unavailable — check your connection and try again.'; return; }
   if (!obj) { if (el) el.textContent = '⚠️ Select an objection first.'; return; }
   if (el) el.textContent = '🛡️ Thinking...';
   try {
@@ -866,7 +873,7 @@ async function runObjectionAI() {
 async function runFollowupAI() {
   const el = document.getElementById('followup-result');
   const scenario = document.getElementById('followup-scenario')?.value;
-  if (!getGroqKey()) { if (el) el.textContent = '⚠️ Add a Groq API key in Settings first.'; return; }
+  if (!(await ensureGroqKey())) { if (el) el.textContent = '⚠️ AI features temporarily unavailable — check your connection and try again.'; return; }
   if (!scenario) { if (el) el.textContent = '⚠️ Select a scenario first.'; return; }
   if (el) el.textContent = '📲 Thinking...';
   try {
@@ -1260,20 +1267,23 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       }
 
       ocrOverlayThumb(imgData);
-      ocrOverlayStep('load', skipGroq ? '🤗 Preparing HuggingFace (page ' + pageNum + ')...' : 'Image loaded — sending to Groq Vision...', 20);
       ocrOverlayPages(pageNum, total);
 
       // ── Groq Vision (direct — no Cloudflare Worker) ───────────────────
       const groqKey = getGroqKey();
-      if (!groqKey && !skipGroq) {
-        _lastOcrError = 'Groq API key not set — go to Settings and paste your key';
-        ocrOverlayStep('error', '⚠️ No Groq key — tap Settings → paste your key → Save', 100);
-        resolve([]); return;
+      const canTryGroq = !!groqKey && !skipGroq;
+
+      ocrOverlayStep('load', canTryGroq
+        ? 'Image loaded — sending to Groq Vision...'
+        : '🤗 Groq unavailable — preparing HuggingFace (page ' + pageNum + ')...', 20);
+
+      // Retry loading keys once if the proxy hadn't finished/succeeded yet
+      if (!groqKey && !getHFKey() && typeof _fetchGroqKeyFromFirestore === 'function') {
+        await _fetchGroqKeyFromFirestore().catch(() => {});
       }
-      // Pages 1-3 use Groq. Pages 4+ (skipGroq=true) jump straight to HF.
-      // HF + OCR.space sit OUTSIDE the Groq try/catch so they are ALWAYS reachable.
-      if (!skipGroq || !getHFKey()) {
-        // Pages 4+: skipGroq=true, but fall back to Groq when HF key is not set
+
+      // No hard-stop when Groq key is missing — always cascade to HF, then OCR.space.
+      if (canTryGroq) {
         try {
           ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
           const names = await groqVisionOCR(b64, mime);
@@ -1285,17 +1295,15 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
         } catch (e) {
           _lastOcrError = e.message || 'Groq Vision failed';
           console.error('Groq Vision error (page ' + pageNum + '):', _lastOcrError);
-          if (_lastOcrError.includes('invalid') || _lastOcrError.includes('401') || _lastOcrError.includes('auth')) {
-            ocrOverlayStep('error', '⚠️ Groq key invalid — go to Settings → re-enter key', 100);
-            resolve([]); return;
-          }
-          // fall through to HF
+          // fall through to HF even on invalid/auth errors
         }
+      } else if (!groqKey) {
+        _lastOcrError = 'Groq key not loaded (proxy unavailable) — trying HuggingFace';
       }
       // HF Vision (pages 4+ primary, or Groq fallback)
       try {
-        const hfLabel = skipGroq ? 'HuggingFace scanning' : 'Trying HuggingFace';
-        ocrOverlayStep('scan', '🤗 ' + hfLabel + ' (page ' + pageNum + '/' + total + ')...', skipGroq ? 30 : 70);
+        const hfLabel = canTryGroq ? 'Trying HuggingFace' : 'HuggingFace scanning';
+        ocrOverlayStep('scan', '🤗 ' + hfLabel + ' (page ' + pageNum + '/' + total + ')...', canTryGroq ? 70 : 40);
         const hfResult = await hfVisionOCR(b64, mime);
         if (hfResult && hfResult.length > 0) {
           ocrOverlayStep('read', '🤗 HF: ' + hfResult.length + ' names (page ' + pageNum + ')', 100);
@@ -1303,7 +1311,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
         }
       } catch (hfErr) {
         const hfMsg = hfErr.message.includes('No HF API key')
-          ? '⚠️ No HF key in portal Settings — trying OCR.space'
+          ? '⚠️ HF not loaded (proxy unavailable) — trying OCR.space'
           : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying OCR.space');
         console.warn('HF fallback:', hfErr.message);
         ocrOverlayStep('scan', hfMsg, 80);
