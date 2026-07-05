@@ -586,6 +586,90 @@ function _proceedToStep3() {
 let _ocrReviewData = [];
 
 
+
+
+// ── OCR character-level correction (matches School Bloom Fix & Clean) ─────
+const NIGERIAN_NAME_FRAGMENTS = [
+  'ADE', 'OLA', 'OYE', 'OGUN', 'AKIN', 'AYO', 'OLU', 'SAN', 'KASALI', 'OGUNLADE',
+  'ALAWODE', 'OYESANWO', 'OGUNDEYI', 'ALAO', 'AKINWANDE', 'OLAWALE', 'OBASA',
+  'OLATUNDE', 'ADENIYI', 'ADEOYE', 'LAWAL', 'AYOMIDE', 'RASAQ', 'GABRIEL',
+  'GODWIN', 'ENOCH', 'EMMANUEL', 'KOREDE', 'SUCCESS', 'EZEKIEL', 'ZAINAB',
+  'SALAM', 'WAJUD', 'MUEEZ', 'QUARDRI', 'BIGGOLD', 'ADEMIDE', 'ABIGEAL',
+  'MICHEAL', 'MICHAEL', 'CHRISTIANA', 'CHRISTIAN', 'MOHAMMED', 'MUHAMMED',
+  'IBRAHIM', 'ABDUL', 'ABDULLAH', 'YUSUF', 'YUSUFF', 'NUHU', 'MUSA', 'ISA',
+  'HASSAN', 'HUSSEIN', 'ALIYU', 'ALIU', 'USMAN', 'SULE', 'SULEIMAN', 'YAKUBU',
+  'GIDEON', 'DANIEL', 'SAMUEL', 'DAVID', 'JOHN', 'PAUL', 'PETER', 'JAMES',
+  'MARY', 'GRACE', 'FAITH', 'HOPE', 'CHARITY', 'JOY', 'PEACE', 'MERCY',
+  'PATIENCE', 'BLESSED', 'GIFT', 'PRECIOUS', 'VICTORY', 'GLORY', 'DIVINE',
+  'CHIDINMA', 'CHIAMAKA', 'NWAFOR', 'OKEKE', 'EZE', 'NWOSU', 'IGWE',
+  'OBI', 'OKORO', 'NNAMDI', 'CHUKWU', 'ANIEFIOK', 'EFFIONG', 'AKPAN',
+  'EDIDIONG', 'UDO', 'IME', 'NSIKAN', 'TIEMI', 'INIABASI',
+  'GBOLAHAN', 'GBADEBO', 'GBELEKALE', 'SHONPE', 'OLIYIDE', 'KOLANOLE'
+];
+
+function _fixOcrChars(name) {
+  let fixed = name.toUpperCase().trim();
+  fixed = fixed.replace(/^\d+([A-Z])/, '$1');
+  fixed = fixed.replace(/([A-Z])\d+$/, '$1');
+  fixed = fixed.replace(/([A-Z])0([A-Z])/g, '$1O$2');
+  fixed = fixed.replace(/([A-Z])1([A-Z])/g, '$1I$2');
+  fixed = fixed.replace(/([A-Z])5([A-Z])/g, '$1S$2');
+  fixed = fixed.replace(/([A-Z])8([A-Z])/g, '$1B$2');
+  const rnFixed = fixed.replace(/RN/g, 'M');
+  if (_nameScore(rnFixed) > _nameScore(fixed)) fixed = rnFixed;
+  fixed = fixed.replace(/[^A-Z\s\-\']/g, '');
+  fixed = fixed.replace(/\s+/g, ' ').trim();
+  return fixed;
+}
+
+function _nameScore(name) {
+  let score = 0;
+  const upper = name.toUpperCase();
+  for (const frag of NIGERIAN_NAME_FRAGMENTS) {
+    if (upper.includes(frag)) score += frag.length;
+  }
+  const consonantRuns = (upper.match(/[^AEIOU\s]{7,}/g) || []);
+  score -= consonantRuns.length * 3;
+  return score;
+}
+
+// Fix names in the OCR review modal (before confirming import)
+function fixNamesInReview() {
+  let fixedCount = 0;
+  _ocrReviewData.forEach(r => {
+    if (!r.sel || !r.name) return;
+    const original = r.name;
+    const corrected = _fixOcrChars(original);
+    if (corrected !== original && corrected.length >= 3) {
+      if (_nameScore(corrected) >= _nameScore(original)) {
+        r.name = corrected;
+        fixedCount++;
+      }
+    }
+  });
+  _renderOcrReviewList();
+  toast('🔧 Fixed ' + fixedCount + ' name' + (fixedCount !== 1 ? 's' : '') + ' — review and confirm.');
+}
+
+// Fix names in already-imported students (deal submission form)
+function fixNamesInForm() {
+  if (!csvParsedNames || !csvParsedNames.length) { toast('No scanned names to fix.'); return; }
+  let fixedCount = 0;
+  csvParsedNames.forEach(s => {
+    if (!s.name) return;
+    const original = s.name;
+    const corrected = _fixOcrChars(original);
+    if (corrected !== original && corrected.length >= 3) {
+      if (_nameScore(corrected) >= _nameScore(original)) {
+        s.name = corrected;
+        fixedCount++;
+      }
+    }
+  });
+  renderCountResult(csvParsedNames.map(s => s.name));
+  toast('🔧 Fixed ' + fixedCount + ' name' + (fixedCount !== 1 ? 's' : '') + ' — check the preview above.');
+}
+
 // ── Class dropdown helpers (shared between bulk + per-row) ────────────────
 let _lastDetectedClass = '';
 const STANDARD_NIGERIAN_CLASSES = [
@@ -1318,11 +1402,106 @@ function ocrOverlayHide(delayMs) {
 // ── Image resize helper — compresses phone photos before OCR ────────────
 // Groq Vision has a hard 4MB base64 limit; full-res camera shots easily exceed it.
 // This resizes to ≤1600px wide at 85% JPEG quality — typically 200-500KB result.
-function resizeImageForOCR(dataURL) {
+// ── OpenCV.js loader (lazy-loaded on first OCR scan) ──────────────────────
+let _cvReady = false, _cvLoading = false;
+function loadOpenCV() {
   return new Promise(resolve => {
+    if (_cvReady) return resolve(true);
+    if (_cvLoading) { const wait = setInterval(() => { if (_cvReady) { clearInterval(wait); resolve(true); } }, 200); return; }
+    _cvLoading = true;
+    if (document.getElementById('opencv-js')) {
+      const wait = setInterval(() => {
+        if (window.cv && cv.Mat) { _cvReady = true; _cvLoading = false; clearInterval(wait); resolve(true); }
+      }, 200);
+      return;
+    }
+    const s = document.createElement('script');
+    s.id = 'opencv-js';
+    s.src = 'https://docs.opencv.org/4.x/opencv.js';
+    s.async = true;
+    s.onload = () => {
+      if (window.cv && cv.Mat) { _cvReady = true; _cvLoading = false; resolve(true); }
+      else if (window.cv) {
+        cv['onRuntimeInitialized'] = () => { _cvReady = true; _cvLoading = false; resolve(true); };
+      } else {
+        const wait = setInterval(() => {
+          if (window.cv && cv.Mat) { _cvReady = true; _cvLoading = false; clearInterval(wait); resolve(true); }
+        }, 300);
+        setTimeout(() => { if (!_cvReady) { clearInterval(wait); _cvLoading = false; resolve(false); } }, 15000);
+      }
+    };
+    s.onerror = () => { _cvLoading = false; resolve(false); };
+    document.head.appendChild(s);
+  });
+}
+
+// ── OpenCV preprocessing: grayscale → denoise → adaptive threshold → deskew ──
+async function preprocessWithOpenCV(canvas) {
+  if (!_cvReady) return canvas;
+  try {
+    const src = cv.imread(canvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    const denoised = new cv.Mat();
+    cv.fastNlMeansDenoising(gray, denoised, 10, 7, 21);
+
+    const binary = new cv.Mat();
+    cv.adaptiveThreshold(denoised, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 31, 10);
+
+    const deskewed = _deskew(binary);
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = deskewed.cols; outCanvas.height = deskewed.rows;
+    cv.imshow(outCanvas, deskewed);
+
+    src.delete(); gray.delete(); denoised.delete(); binary.delete(); deskewed.delete();
+    return outCanvas;
+  } catch (e) {
+    console.warn('[OpenCV] preprocessing failed, using raw image:', e.message);
+    return canvas;
+  }
+}
+
+function _deskew(binaryMat) {
+  try {
+    const edges = new cv.Mat();
+    cv.Canny(binaryMat, edges, 50, 150);
+    const lines = new cv.Mat();
+    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 80, 30, 10);
+
+    let angles = [];
+    for (let i = 0; i < Math.min(lines.rows, 30); i++) {
+      const x1 = lines.data32F[i * 4], y1 = lines.data32F[i * 4 + 1];
+      const x2 = lines.data32F[i * 4 + 2], y2 = lines.data32F[i * 4 + 3];
+      const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+      if (Math.abs(angle) < 20) angles.push(angle);
+    }
+    edges.delete(); lines.delete();
+
+    if (angles.length < 3) return binaryMat.clone();
+
+    angles.sort((a, b) => a - b);
+    const median = angles[Math.floor(angles.length / 2)];
+    if (Math.abs(median) < 0.5) return binaryMat.clone();
+
+    const rows = binaryMat.rows, cols = binaryMat.cols;
+    const M = cv.getRotationMatrix2D(new cv.Point(cols / 2, rows / 2), median, 1);
+    const rotated = new cv.Mat();
+    cv.warpAffine(binaryMat, rotated, M, new cv.Size(cols, rows), cv.INTER_CUBIC, cv.BORDER_CONSTANT, new cv.Scalar(255));
+    M.delete();
+    return rotated;
+  } catch (e) {
+    console.warn('[OpenCV] deskew failed:', e.message);
+    return binaryMat.clone();
+  }
+}
+
+function resizeImageForOCR(dataURL) {
+  return new Promise(async resolve => {
     const img = new Image();
-    img.onload = () => {
-      const MAX_W = 400; // 800 still hit free-tier TPM; 400px enough for qwen3.6-27b OCR
+    img.onload = async () => {
+      const MAX_W = 400;
       const scale = img.width > MAX_W ? MAX_W / img.width : 1;
       const w = Math.round(img.width  * scale);
       const h = Math.round(img.height * scale);
@@ -1330,9 +1509,22 @@ function resizeImageForOCR(dataURL) {
       canvas.width  = w;
       canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+
+      // OpenCV preprocessing (if available) — improves handwriting clarity
+      let finalCanvas = canvas;
+      try {
+        const cvReady = await loadOpenCV();
+        if (cvReady) {
+          finalCanvas = await preprocessWithOpenCV(canvas);
+        }
+      } catch (e) {
+        console.warn('[OCR] OpenCV preprocess skipped:', e.message);
+        finalCanvas = canvas;
+      }
+
+      resolve(finalCanvas.toDataURL('image/jpeg', 0.85));
     };
-    img.onerror = () => resolve(dataURL); // fallback: use original if resize fails
+    img.onerror = () => resolve(dataURL);
     img.src = dataURL;
   });
 }
