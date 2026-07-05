@@ -541,7 +541,7 @@ function renderCountResult(names) {
 
   // Immediately show the FULL editable name list — no extra tap required.
   // Small delay lets the "done scanning" state render first for a smooth transition.
-  setTimeout(() => { openOcrReviewModal(csvParsedNames); }, 250);
+  setTimeout(() => { openOcrReviewModal(csvParsedNames, _lastDetectedClass); }, 250);
 }
 
 function pipelineReset() {
@@ -564,7 +564,7 @@ function pipelineRescan() { pipelineReset(); }
 function pipelineConfirmCount() {
   // If we have parsed names — show Review Names modal so agent can verify
   if (csvParsedNames && csvParsedNames.length > 0) {
-    openOcrReviewModal(csvParsedNames);
+    openOcrReviewModal(csvParsedNames, _lastDetectedClass);
     return;
   }
   _proceedToStep3(); // no names to review — go straight to step 3
@@ -585,12 +585,82 @@ function _proceedToStep3() {
 // ── OCR Review Modal ────────────────────────────────────────────────────────
 let _ocrReviewData = [];
 
-function openOcrReviewModal(parsedNames) {
+
+// ── Class dropdown helpers (shared between bulk + per-row) ────────────────
+let _lastDetectedClass = '';
+const STANDARD_NIGERIAN_CLASSES = [
+  'Creche','Playgroup','Nursery 1','Nursery 2','Kindergarten',
+  'Primary 1','Primary 2','Primary 3','Primary 4','Primary 5','Primary 6',
+  'JSS 1','JSS 2','JSS 3',
+  'SSS 1','SSS 2','SSS 3',
+  'SSS 1 Science','SSS 1 Arts','SSS 1 Commercial',
+  'SSS 2 Science','SSS 2 Arts','SSS 2 Commercial',
+  'SSS 3 Science','SSS 3 Arts','SSS 3 Commercial'
+];
+
+function _getExistingClasses() {
+  // Agent app may not have SD.students — safely look for any class data
+  try {
+    if (typeof csvParsedNames !== 'undefined' && csvParsedNames.length) {
+      const fromParsed = [...new Set(csvParsedNames.map(s => s.class).filter(Boolean))].sort();
+      if (fromParsed.length) return fromParsed;
+    }
+  } catch(_) {}
+  return [];
+}
+
+function populateClassSelect(sel, currentVal) {
+  if (!sel) return;
+  const existing = _getExistingClasses();
+  const all = [...new Set([...existing, ...STANDARD_NIGERIAN_CLASSES])].sort();
+  sel.innerHTML = '<option value="">— Class —</option>' +
+    all.map(c => `<option value="${esc(c)}" ${c===currentVal?'selected':''}>${esc(c)}</option>`).join('') +
+    '<option value="__new__">➕ New class…</option>';
+}
+
+function handleClassSelectChange(sel) {
+  if (sel.value === '__new__') {
+    sel.value = '';
+    const v = prompt('Enter class name:');
+    if (v && v.trim()) {
+      const cv = v.trim();
+      // Add the new class as an <option> right before the "__new__" row
+      const newOpt = document.createElement('option');
+      newOpt.value = cv; newOpt.textContent = cv;
+      sel.insertBefore(newOpt, sel.lastElementChild);
+      sel.value = cv;
+    }
+  }
+}
+
+function openOcrReviewModal(parsedNames, detectedClass) {
+  const dc = (detectedClass || _lastDetectedClass || '').trim();
   _ocrReviewData = (parsedNames || []).map(p => {
     const nm = typeof p === 'string' ? p : (p.name || '');
-    return { name: nm.trim().toUpperCase(), cls: '', sel: true };
+    return { name: nm.trim().toUpperCase(), cls: dc, sel: true };
   }).filter(r => r.name.length > 1);
   _renderOcrReviewList();
+  // Pre-fill the bulk class dropdown too
+  const bulkSel = document.getElementById('ocr-class-all');
+  if (bulkSel && dc) {
+    setTimeout(() => {
+      // If the detected class isn't in the list yet, add it
+      let found = false;
+      for (const opt of bulkSel.options) { if (opt.value === dc) { found = true; break; } }
+      if (!found) {
+        const newOpt = document.createElement('option');
+        newOpt.value = dc; newOpt.textContent = dc;
+        bulkSel.insertBefore(newOpt, bulkSel.lastElementChild);
+      }
+      bulkSel.value = dc;
+    }, 50);
+  }
+  // Show a small "auto-detected" note if we got a class from the scan
+  const note = document.getElementById('ocr-detected-class-note');
+  if (note) {
+    note.textContent = dc ? '🤖 Class auto-detected from register: ' + dc + ' — confirm or change below.' : '';
+    note.style.display = dc ? 'block' : 'none';
+  }
   openM('ocr-review-modal');
 }
 
@@ -610,10 +680,10 @@ function _renderOcrReviewList() {
     ni.type = 'text'; ni.value = r.name || ''; ni.autocomplete = 'off'; ni.setAttribute('autocapitalize','off');
     ni.style.cssText = 'flex:1;margin:0;padding:3px 6px;font-size:0.78rem;min-width:0;text-transform:uppercase;border:1px solid #2d4562;border-radius:6px;background:#0f1d2e !important;color:#f0f6ff !important;-webkit-text-fill-color:#f0f6ff;caret-color:#f0f6ff;';
     (function(idx){ ni.onchange = function(){ _ocrReviewData[idx].name = this.value.trim().toUpperCase(); }; })(i);
-    const ci = document.createElement('input');
-    ci.type = 'text'; ci.value = r.cls || ''; ci.placeholder = 'Class'; ci.autocomplete = 'off';
-    ci.style.cssText = 'width:64px;flex-shrink:0;margin:0;padding:3px 5px;font-size:0.74rem;border:1px solid #2d4562;border-radius:6px;background:#0f1d2e !important;color:#f0f6ff !important;-webkit-text-fill-color:#f0f6ff;caret-color:#f0f6ff;';
-    (function(idx){ ci.onchange = function(){ _ocrReviewData[idx].cls = this.value.trim(); }; })(i);
+    const ci = document.createElement('select');
+    ci.style.cssText = 'width:88px;flex-shrink:0;margin:0;padding:3px 2px;font-size:0.7rem;border:1px solid #2d4562;border-radius:6px;background:#0f1d2e !important;color:#f0f6ff !important;';
+    populateClassSelect(ci, r.cls);
+    (function(idx){ ci.onchange = function(){ handleClassSelectChange(this); _ocrReviewData[idx].cls = this.value === '__new__' ? '' : this.value; }; })(i);
     const db = document.createElement('button');
     db.textContent = '\u2715';
     db.style.cssText = 'width:auto;display:inline-block;flex:0 0 auto;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:0.72rem;color:#dc2626;flex-shrink:0;';
@@ -645,7 +715,7 @@ function ocrSelectAll(checked) {
 
 function ocrSetClassAll() {
   const cls = (document.getElementById('ocr-class-all')?.value || '').trim();
-  if (!cls) return;
+  if (!cls || cls === '__new__') return;
   _ocrReviewData.forEach(r => { if (r.sel) r.cls = cls; });
   _renderOcrReviewList();
 }
@@ -892,6 +962,7 @@ Columns: SERIAL NO | SURNAME | FIRST NAME | (other columns — ignore them).
 The image may be at any angle — read it correctly.
 
 TASK: Extract every student name visible. Combine as "SURNAME FIRSTNAME" (all caps).
+ALSO: If you can see a class name on the page (e.g. "JSS 2A REGISTER", "PRIMARY 6", "SSS 3 SCIENCE" at the top or as a heading), include it as "detected_class".
 
 Nigerian name examples — surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE, OLAWALE, SHONPE, GBELEKALE, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, LAWAL, AYOMIDE, OBASA, OLATUNDE, ADENIYI, OLOOETU
 Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL, ADEMIDE, SUCCESS, EZEKIEL, AWAL, EMMANUEL, BIGGOLD, QUARDRI, MUEEZ, ZAINAB, SALAM, WAJUD
@@ -900,9 +971,10 @@ Rules:
 1. Every row = one student — read ALL rows, do not skip any
 2. Ignore serial numbers, headers (NAMES, S/N), fee columns, dates, totals
 3. Unclear handwriting — make your BEST guess at the Nigerian name
-4. Output ONLY the JSON below — no explanation, no markdown, no extra text
+4. If no class name is visible, set detected_class to null
+5. Output ONLY the JSON below — no explanation, no markdown, no extra text
 
-{"names":["OGUNLADE GABRIEL","KASALI RASAQ","ALAWODE SUCCESS"]}`;
+{"detected_class":"JSS 2A","names":["OGUNLADE GABRIEL","KASALI RASAQ","ALAWODE SUCCESS"]}`;
 
 
 // ── Tesseract.js fallback for when Groq fails (no API, no rate limits) ───
@@ -967,6 +1039,14 @@ async function hfVisionOCR(base64, mime) {
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   let jsonStr = text.trim();
   const cb = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/); if (cb) jsonStr = cb[1].trim();
+  // Try to capture detected_class before array-only regexes strip it
+  try {
+    const rawParsed = JSON.parse(jsonStr);
+    if (rawParsed && !Array.isArray(rawParsed) && rawParsed.detected_class) {
+      const dc = String(rawParsed.detected_class).trim().toUpperCase();
+      if (dc && dc !== 'NULL') _lastDetectedClass = dc;
+    }
+  } catch(_) {}
   const ow = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/); if (ow) jsonStr = ow[1].trim();
   const am = jsonStr.match(/(\[[\s\S]*\])/); if (am) jsonStr = am[1].trim();
   let students;
@@ -1115,9 +1195,9 @@ async function groqVisionOCR(base64, mime, _retry) {
       if (objWrap) jsonStr = objWrap[1].trim();
       else { const arrMatch = jsonStr.match(/(\[[\s\S]*\])/); if (arrMatch) jsonStr = arrMatch[1].trim(); }
     }
-    let students;
+    let parsedObj;
     try {
-      students = JSON.parse(jsonStr);
+      parsedObj = JSON.parse(jsonStr);
     } catch (parseErr) {
       console.warn('JSON parse failed — prose fallback:', text.slice(0, 100));
       const fallbackNames = (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
@@ -1128,7 +1208,12 @@ async function groqVisionOCR(base64, mime, _retry) {
       if (fb.length > 0) { console.log('✅ Prose fallback: ' + fb.length + ' names'); return fb; }
       throw new Error('Model returned text — try a clearer photo');
     }
-    if (!Array.isArray(students) || !students.length) throw new Error('Groq returned 0 students');
+    // Capture detected_class from the parsed object
+    if (parsedObj && !Array.isArray(parsedObj) && parsedObj.detected_class) {
+      const dc = String(parsedObj.detected_class).trim().toUpperCase();
+      if (dc && dc !== 'NULL') _lastDetectedClass = dc;
+    }
+    const students = Array.isArray(parsedObj) ? parsedObj : (parsedObj.names || parsedObj.students || []);
     const normalized = students.map(s => {
       // New format: string element e.g. "KASALI RASAQ"
       if (typeof s === 'string') {
@@ -1577,6 +1662,7 @@ async function processImagesSequentially(files) {
   // This eliminates the 30-second retry penalty Groq imposes on every 4th/7th page.
   const GROQ_DELAY_S = 15;
   _groqRateLimitedThisSession = false; // fresh scan — give Groq another chance
+  _lastDetectedClass = ''; // fresh scan — clear previous detection
   for (let i = 0; i < files.length; i++) {
     if (i > 0 && files.length > 1) {
       const ld = document.getElementById('csv-loading');
