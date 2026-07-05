@@ -211,6 +211,11 @@ async function _fetchGroqKeyFromFirestore() {
       localStorage.setItem(HF_KEY_STORAGE, d.hfApiKey);
       console.log('✅ HF key loaded via secure proxy');
     }
+    if (d.geminiApiKey) {
+      window.GEMINI_API_KEY = d.geminiApiKey;
+      localStorage.setItem(GEMINI_KEY_STORAGE, d.geminiApiKey);
+      console.log('✅ Gemini key loaded via secure proxy');
+    }
   } catch(e) { /* offline — use whatever is in localStorage */ }
 }
 
@@ -1067,6 +1072,11 @@ const HF_OCR_MODEL = 'Qwen/Qwen2.5-VL-7B-Instruct';
 const HF_KEY_STORAGE = 'hf_api_key';
 function getHFKey() { return window.HF_API_KEY || localStorage.getItem(HF_KEY_STORAGE) || ''; }
 
+const GEMINI_KEY_STORAGE = 'gemini_api_key';
+function getGeminiKey() { return window.GEMINI_API_KEY || localStorage.getItem(GEMINI_KEY_STORAGE) || ''; }
+const GEMINI_OCR_MODEL = 'gemini-2.0-flash';
+const GEMINI_OCR_PROMPT = GROQ_OCR_PROMPT; // same prompt works for Gemini
+
 async function hfVisionOCR(base64, mime) {
   const hfKey = getHFKey();
   if (!hfKey) throw new Error('No HF API key — enter it in portal Settings');
@@ -1152,30 +1162,68 @@ async function hfVisionOCR(base64, mime) {
 }
 
 // ── OCR.space Engine 3 last resort (no key required, engine=3 is open source) ──
-async function ocrSpaceOCR(base64, mime) {
-  // Try Engine 3 first (open-source, fast). If it errors, retry with Engine 2 (cloud, more accurate).
-  const tryEngine = async (engine) => {
-    const fd = new FormData();
-    fd.append('base64Image', 'data:' + mime + ';base64,' + base64);
-    fd.append('language', 'eng');
-    fd.append('OCREngine', String(engine));
-    fd.append('isTable', 'true');
-    fd.append('apikey', 'helloworld');
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 30000);
-    const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: fd, signal: ctrl.signal });
-    clearTimeout(t);
-    const data = await resp.json();
-    if (data.IsErroredOnProcessing) throw new Error('OCR.space E' + engine + ': ' + (data.ErrorMessage?.[0] || 'error'));
-    const text = (data.ParsedResults || []).map(r => r.ParsedText || '').join('\n');
-    if (!text.trim()) throw new Error('OCR.space E' + engine + ' returned empty text');
-    return extractNamesFromText(text);
-  };
-  try { return await tryEngine(3); }
-  catch(e3) {
-    console.warn('OCR.space E3 failed:', e3.message, '— trying E2');
-    return await tryEngine(2);  // Engine 2 fallback
+async function geminiVisionOCR(base64, mime) {
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error('No Gemini API key');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
+  let resp;
+  try {
+    resp = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_OCR_MODEL + ':generateContent?key=' + apiKey,
+      {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: GEMINI_OCR_PROMPT },
+              { inline_data: { mime_type: mime || 'image/jpeg', data: base64 } }
+            ]
+          }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
+        })
+      }
+    );
+    clearTimeout(timer);
+  } catch(fe) { clearTimeout(timer); throw new Error('Gemini network error: ' + fe.message); }
+
+  if (!resp.ok) {
+    const ed = await resp.json().catch(() => ({}));
+    throw new Error('Gemini ' + resp.status + ': ' + (ed.error?.message || resp.statusText));
   }
+  const data = await resp.json();
+  let text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  if (!text.trim()) throw new Error('Gemini returned empty response');
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let jsonStr = text.trim();
+  const cb = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/); if (cb) jsonStr = cb[1].trim();
+  try {
+    const rawParsed = JSON.parse(jsonStr);
+    if (rawParsed && !Array.isArray(rawParsed) && rawParsed.detected_class) {
+      const dc = String(rawParsed.detected_class).trim().toUpperCase();
+      if (dc) _lastDetectedClass = dc;
+    }
+  } catch(_) {}
+  const ow = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/); if (ow) jsonStr = ow[1].trim();
+  const am = jsonStr.match(/(\[[\s\S]*\])/); if (am) jsonStr = am[1].trim();
+  let students;
+  try { students = JSON.parse(jsonStr); }
+  catch(_) {
+    const fb = extractNamesFromText(text);
+    return fb.map(n => { const p=n.trim().toUpperCase().split(/\s+/); return {surname:p[0]||'',firstname:p.slice(1).join(' ')||'',fullName:n.trim().toUpperCase()}; }).filter(s=>s.fullName.length>=3);
+  }
+  if (!Array.isArray(students) || !students.length) throw new Error('Gemini returned 0 students');
+  return students.map(s => {
+    if (typeof s === 'string') {
+      const parts = s.trim().toUpperCase().split(/\s+/);
+      return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: s.trim().toUpperCase() };
+    }
+    const sur=(s.surname||'').trim().toUpperCase(), fst=(s.firstname||s.first_name||s.firstName||'').trim().toUpperCase();
+    const full=(s.fullName||s.full_name||'').trim().toUpperCase()||(sur+' '+fst).trim();
+    return {surname:sur, firstname:fst, fullName:full};
+  }).filter(s=>s.fullName.length>=2);
 }
 
 async function groqVisionOCR(base64, mime, _retry) {
@@ -1555,11 +1603,11 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
         : '🤗 Groq unavailable — preparing HuggingFace (page ' + pageNum + ')...', 20);
 
       // Retry loading keys once if the proxy hadn't finished/succeeded yet
-      if (!groqKey && !getHFKey() && typeof _fetchGroqKeyFromFirestore === 'function') {
+      if (!groqKey && !getHFKey() && !getGeminiKey() && typeof _fetchGroqKeyFromFirestore === 'function') {
         await _fetchGroqKeyFromFirestore().catch(() => {});
       }
 
-      // No hard-stop when Groq key is missing — always cascade to HF, then OCR.space.
+      // No hard-stop when Groq key is missing — always cascade to HF, then Gemini.
       if (canTryGroq) {
         try {
           ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
@@ -1588,26 +1636,21 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
         }
       } catch (hfErr) {
         const hfMsg = hfErr.message.includes('No HF API key')
-          ? '⚠️ HF not loaded (proxy unavailable) — trying OCR.space'
-          : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying OCR.space');
+          ? '⚠️ HF not loaded (proxy unavailable) — trying Gemini'
+          : ('🤗 HF failed (' + hfErr.message.slice(0,40) + ') — trying Gemini');
         console.warn('HF fallback:', hfErr.message);
         ocrOverlayStep('scan', hfMsg, 80);
       }
-      // OCR.space Engine 3 last resort
+      // Gemini 2.0 Flash last resort
       try {
-        const ocrNames = await ocrSpaceOCR(b64, mime);
-        if (ocrNames && ocrNames.length > 0) {
-          const mapped = ocrNames.map(name => {
-            const parts = name.trim().toUpperCase().split(/\s+/);
-            return { surname: parts[0]||'', firstname: parts.slice(1).join(' ')||'', fullName: name.trim().toUpperCase() };
-          }).filter(s => s.fullName.length >= 3);
-          if (mapped.length > 0) {
-            ocrOverlayStep('read', '📄 OCR.space: ' + mapped.length + ' names (page ' + pageNum + ')', 100);
-            resolve(mapped); return;
-          }
+        ocrOverlayStep('scan', '✨ Gemini 2.0 Flash (page ' + pageNum + '/' + total + ')...', 85);
+        const geminiNames = await geminiVisionOCR(b64, mime);
+        if (geminiNames && geminiNames.length > 0) {
+          ocrOverlayStep('read', '✨ Gemini: ' + geminiNames.length + ' names (page ' + pageNum + ')', 100);
+          resolve(geminiNames); return;
         }
-      } catch (ocrErr) {
-        console.warn('OCR.space fallback failed:', ocrErr.message);
+      } catch (geminiErr) {
+        console.warn('Gemini fallback failed:', geminiErr.message);
       }
       ocrOverlayStep('error', '⚠️ All OCR failed: ' + _lastOcrError.slice(0, 60), 100);
       resolve([]);
