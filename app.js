@@ -247,6 +247,45 @@ function autoTier(){
   updateCommission();
 }
 
+// ── Show Principal — fullscreen panel built from what's actually captured ──
+// v1's OCR only extracts names (no payment status/fees per student, unlike
+// bloom-agent-v2's ledger scanner), so this deliberately shows headcount +
+// class + name list + selected tier — never a fabricated "outstanding fees"
+// figure that would need data this app doesn't collect.
+function openShowPrincipalPanel(){
+  const name = ($('s-name')?.value || 'This School').trim() || 'This School';
+  const phone = ($('s-phone')?.value || '').trim();
+  $('sp-school-name').textContent = name.toUpperCase();
+  $('sp-location').textContent = phone ? 'Contact: ' + phone : '';
+
+  const count = csvStudentCount || parseInt($('s-count')?.value) || 0;
+  $('sp-count').textContent = count || '—';
+
+  const cls = (typeof _lastDetectedClass !== 'undefined' && _lastDetectedClass) ? _lastDetectedClass : '—';
+  $('sp-class').textContent = cls;
+
+  const tierEl = $('sp-tier');
+  if (selTier) {
+    tierEl.textContent = selTier.name + ' — ₦' + Number(selTier.price).toLocaleString('en-NG') + '/term';
+  } else {
+    tierEl.textContent = 'Not yet selected';
+  }
+
+  const listEl = $('sp-names-list');
+  const names = (typeof csvParsedNames !== 'undefined' && csvParsedNames.length) ? csvParsedNames.map(s => s.name) : [];
+  if (names.length) {
+    listEl.innerHTML = names.map((n, i) => '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + (i+1) + '. ' + n.replace(/</g,'&lt;') + '</div>').join('');
+  } else {
+    listEl.innerHTML = '<div style="color:var(--sub);text-align:center;padding:1rem 0;">No names captured yet — use the Smart Register Counter above first.</div>';
+  }
+
+  $('show-principal-panel').style.display = 'block';
+}
+
+function closeShowPrincipalPanel(){
+  $('show-principal-panel').style.display = 'none';
+}
+
 function updateCommission(){
   if(!selTier)return;
   const terms=parseInt($('s-terms').value)||1;
@@ -1497,11 +1536,38 @@ function _deskew(binaryMat) {
   }
 }
 
+function _computeBlurVariance(canvas) {
+  // Laplacian-variance blur check, same technique proven in bloom-agent-v2.
+  // Runs on the already-resized canvas (cheap) — flags a likely-unusable
+  // photo so the agent gets a warning instead of silently poor OCR.
+  try {
+    if (!_cvReady) return null;
+    const src = cv.imread(canvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    const lap = new cv.Mat();
+    cv.Laplacian(gray, lap, cv.CV_64F);
+    const mean = new cv.Mat(), stddev = new cv.Mat();
+    cv.meanStdDev(lap, mean, stddev);
+    const variance = Math.pow(stddev.doubleAt(0, 0), 2);
+    [src, gray, lap, mean, stddev].forEach(m => m.delete());
+    return variance;
+  } catch (e) { return null; }
+}
+const BLUR_VARIANCE_THRESHOLD_V1 = 60;
+
 function resizeImageForOCR(dataURL) {
   return new Promise(async resolve => {
     const img = new Image();
     img.onload = async () => {
-      const MAX_W = 400;
+      // Was 400px — the real accuracy bottleneck for handwriting OCR. Every
+      // denoise/threshold/deskew step downstream was operating on an
+      // already-tiny image no matter how good those algorithms are. Raised
+      // to 1000px, matching the resolution level proven working in
+      // bloom-agent-v2's ledger scanner (same qwen3.6-27b model, same
+      // free-tier rate-limit handling already in place here — this app
+      // already reads x-ratelimit-reset-tokens correctly).
+      const MAX_W = 1000;
       const scale = img.width > MAX_W ? MAX_W / img.width : 1;
       const w = Math.round(img.width  * scale);
       const h = Math.round(img.height * scale);
@@ -1516,6 +1582,12 @@ function resizeImageForOCR(dataURL) {
         const cvReady = await loadOpenCV();
         if (cvReady) {
           finalCanvas = await preprocessWithOpenCV(canvas);
+          const variance = _computeBlurVariance(canvas);
+          if (variance !== null && variance < BLUR_VARIANCE_THRESHOLD_V1) {
+            window._lastOcrBlurWarning = true;
+          } else {
+            window._lastOcrBlurWarning = false;
+          }
         }
       } catch (e) {
         console.warn('[OCR] OpenCV preprocess skipped:', e.message);
@@ -1535,8 +1607,13 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
 
     reader.onload = async ev => {
       try {
-      // Resize to ≤400px — reduces image tokens to stay under 6K TPM free-tier limit
+      // Resize to ≤1000px — was 400px, which capped OCR accuracy no matter
+      // how good the downstream denoise/threshold/deskew steps were.
       const imgData = await resizeImageForOCR(ev.target.result);
+      const isBlurry = window._lastOcrBlurWarning === true;
+      if (isBlurry) {
+        ocrOverlayStep('load', '⚠️ Page ' + pageNum + ' looks blurry — reading anyway, but consider retaking it if names come out wrong.', 15);
+      }
       const b64    = imgData.split(',')[1];
       let mime = file.type || '';
       if (!mime || mime === 'application/octet-stream' || mime === 'application/unknown') {
