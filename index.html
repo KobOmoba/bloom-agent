@@ -64,8 +64,34 @@
       <div class="card">
         <div class="card-title">📝 Submit a School Deal</div>
         <p style="font-size:0.82rem;color:var(--sub);margin-bottom:1rem;">Fill in the school details. Bayo reviews and approves. You earn on approval.</p>
+
+        <!-- ═══ NEW: SIGNBOARD SCAN — auto-fills name/address/LGA/state ═══ -->
+        <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1.5px solid rgba(124,58,237,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
+          <div style="font-weight:800;font-size:0.85rem;color:#a78bfa;margin-bottom:0.4rem;">📸 Scan School Signboard</div>
+          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the school's signboard — AI reads the name, address, LGA and state automatically.</p>
+          <input type="file" id="signboard-input" accept="image/*" capture="environment" style="display:none;" onchange="scanSignboard(event)">
+          <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('signboard-input').click()">📷 Scan Signboard</button>
+          <div id="signboard-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
+        </div>
+
         <label>School Name</label>
         <input type="text" id="s-name" placeholder="e.g. Bright Stars Academy">
+        <label>Address</label>
+        <input type="text" id="s-address" placeholder="e.g. 12 Akin Street, Abeokuta">
+        <label>LGA</label>
+        <input type="text" id="s-lga" placeholder="e.g. Abeokuta South">
+        <label>State</label>
+        <input type="text" id="s-state" placeholder="e.g. Ogun" list="s-states-list">
+        <datalist id="s-states-list">
+          <option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option>
+          <option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option>
+          <option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>Gombe</option>
+          <option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option>
+          <option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option>
+          <option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option>
+          <option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option>
+          <option>Zamfara</option><option>FCT</option>
+        </datalist>
         <label>Principal's WhatsApp</label>
         <input type="tel" id="s-phone" placeholder="2348012345678">
         <label>Principal's Email (optional)</label>
@@ -303,7 +329,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js?v=20260719b"></script>
+<script src="app.js?v=20260719c"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
