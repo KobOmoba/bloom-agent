@@ -256,7 +256,8 @@ function openShowPrincipalPanel(){
   const name = ($('s-name')?.value || 'This School').trim() || 'This School';
   const phone = ($('s-phone')?.value || '').trim();
   $('sp-school-name').textContent = name.toUpperCase();
-  $('sp-location').textContent = phone ? 'Contact: ' + phone : '';
+  const loc = [($('s-lga')?.value||'').trim(), ($('s-state')?.value||'').trim()].filter(Boolean).join(', ');
+  $('sp-location').textContent = loc || (phone ? 'Contact: ' + phone : '');
 
   // Prefer the richer Financial Ledger Scan data if the agent ran it —
   // falls back to the headcount-only Smart Register Counter data otherwise.
@@ -343,6 +344,9 @@ async function submitDeal(){
   if(window._dealSubmitting){ return; }  // prevent double-tap
   window._dealSubmitting = true;
   const name=$('s-name').value.trim();
+  const address=($('s-address')?.value||'').trim();
+  const lga=($('s-lga')?.value||'').trim();
+  const state=($('s-state')?.value||'').trim();
   const phone=$('s-phone').value.trim().replace(/\D/g,'');
   const email=$('s-email').value.trim();
   const count=parseInt($('s-count').value)||0;
@@ -359,7 +363,7 @@ async function submitDeal(){
   const deal={
     timestamp:new Date(), status:'pending',
     agent:{ id:agent.id, name:agent.name, phone:agent.phone, commission:agent.commission||20 },
-    school:{ name, phone, email, studentCount:count },
+    school:{ name, address, lga, state, phone, email, studentCount:count },
     tier:{ name:selTier.name, price:selTier.price },
     terms, notes,
     // AI-scanned student names — used by onboarding agent to pre-load school
@@ -394,7 +398,7 @@ async function submitDeal(){
     // Bayo reviews the deal, generates school code, and sends the onboarding link.
     // Agent's job is done at submission.
     // Reset form
-    ['s-name','s-phone','s-email','s-count','s-notes'].forEach(id=>$(id).value='');
+    ['s-name','s-address','s-lga','s-state','s-phone','s-email','s-count','s-notes'].forEach(id=>{ if($(id)) $(id).value=''; });
     $('s-terms').value='1';
     document.querySelectorAll('.tier').forEach(t=>t.classList.remove('sel'));
     selTier=null; $('comm-box').style.display='none';
@@ -1400,6 +1404,114 @@ async function groqVisionOCR(base64, mime, _retry) {
   } catch (e) {
     console.warn('Groq Vision OCR failed:', e.message);
     throw e;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SIGNBOARD SCAN — auto-fills school name/address/LGA/state
+// Ported from bloom-agent-v2's proven signboard pipeline (direct Groq,
+// qwen/qwen3.6-27b, same working config). Signboard text is printed, not
+// handwritten, and single-block rather than a multi-column table, so this
+// uses a simple resize (no OpenCV crop/deskew needed — that machinery
+// exists for the register/ledger scans below, not this one).
+// ═══════════════════════════════════════════════════════════════════════
+
+const SIGNBOARD_PROMPT = 'You are reading a Nigerian school signboard photograph. Extract: school name, full address, LGA, state.\nReturn ONLY valid JSON — no markdown, no explanation:\n{"name":"SCHOOL NAME","address":"full address","lga":"LGA name","state":"State name"}\nUse empty string for anything unclear.';
+
+function _compressImageSimple(dataURL, maxW) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataURL);
+    img.src = dataURL;
+  });
+}
+
+async function _callGroqSignboardVision(base64, mime, _retry) {
+  if (_retry === undefined) _retry = 0;
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), 45000);
+  let resp;
+  try {
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Authorization': 'Bearer ' + getGroqKey(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: GROQ_OCR_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+          { type: 'text', text: SIGNBOARD_PROMPT }
+        ]}],
+        temperature: 0,
+        max_tokens: 500,
+        reasoning_format: 'hidden',
+        response_format: { type: 'json_object' }
+      })
+    });
+    clearTimeout(fetchTimer);
+  } catch (fetchErr) {
+    clearTimeout(fetchTimer);
+    if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return _callGroqSignboardVision(base64, mime, _retry + 1); }
+    throw new Error(fetchErr.name === 'AbortError' ? 'Groq timed out' : fetchErr.message);
+  }
+  if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
+    if (_retry >= 3) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq rate-limited'); }
+    const retryAfter = resp.headers.get('retry-after');
+    let waitMs = parseFloat(retryAfter) * 1000;
+    if (!waitMs || isNaN(waitMs)) waitMs = 15000;
+    waitMs = Math.min(Math.max(waitMs, 3000), 60000);
+    await new Promise(r => setTimeout(r, waitMs));
+    return _callGroqSignboardVision(base64, mime, _retry + 1);
+  }
+  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq ' + resp.status); }
+  const data = await resp.json();
+  let text = data.choices?.[0]?.message?.content || '';
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  try { return JSON.parse(text); }
+  catch (e) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
+    throw new Error('Could not read signboard clearly. Try again with better lighting.');
+  }
+}
+
+async function scanSignboard(event) {
+  const file = event.target.files[0]; if (!file) return;
+  event.target.value = '';
+  const fb = document.getElementById('signboard-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  if (!getGroqKey()) { show('❌ Groq key not loaded yet — wait a moment and try again.'); return; }
+  show('📸 Reading signboard...');
+  try {
+    const reader = new FileReader();
+    const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
+    const compressed = await _compressImageSimple(dataURL, 800);
+    const base64 = compressed.split(',')[1];
+    const result = await _callGroqSignboardVision(base64, 'image/jpeg');
+
+    let filled = [];
+    if (result.name && $('s-name'))       { $('s-name').value = result.name; filled.push('name'); }
+    if (result.address && $('s-address')) { $('s-address').value = result.address; filled.push('address'); }
+    if (result.lga && $('s-lga'))         { $('s-lga').value = result.lga; filled.push('LGA'); }
+    if (result.state && $('s-state'))     { $('s-state').value = result.state; filled.push('state'); }
+
+    if (filled.length) {
+      show('✅ Filled ' + filled.join(', ') + ' — please verify before submitting.');
+    } else {
+      show('⚠️ Could not read the signboard clearly — please fill in manually.');
+    }
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+  } catch (e) {
+    show('❌ ' + (e.message || 'Could not read signboard. Try a clearer photo.'));
   }
 }
 
