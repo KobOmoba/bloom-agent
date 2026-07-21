@@ -35,6 +35,34 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-19 — Added Signboard Scan (auto-fills name/address/LGA/state)
+- **Ported from `bloom-agent-v2`'s proven signboard pipeline** — direct
+  Groq call, `qwen/qwen3.6-27b`, same working config. Signboard text is
+  printed and single-block (not a handwritten multi-column table), so this
+  uses a simple resize with no OpenCV crop/deskew — that machinery exists
+  for the register/ledger scans, not needed here.
+- **New fields added to the form:** Address, LGA, State — these didn't
+  exist in v1 at all before now. School Name field is reused (auto-filled,
+  still manually editable).
+- **New "📸 Scan School Signboard" section** placed above the existing
+  register-scan pipeline. Entirely separate code path
+  (`scanSignboard`/`_callGroqSignboardVision`/`SIGNBOARD_PROMPT`) — the
+  existing Smart Register Counter and yesterday's Financial Ledger Scan
+  are both untouched.
+- **Caught and fixed a duplicate-ID bug during this edit** — an early
+  version of the str_replace accidentally duplicated the `#ai-pipeline`
+  div opening tag and introduced a conflicting step-number label (the
+  register pipeline already has its own internal "Step 1 → Step 2"
+  sub-numbering for scan/review; a naive outer renumbering clashed with
+  it). Fixed before pushing — verified zero duplicate IDs across the file
+  before commit.
+- **Deal object extended** with `address`/`lga`/`state` under `school` —
+  additive, existing fields unchanged.
+- **Show Principal panel** now displays real LGA/state when captured,
+  falling back to phone contact if not.
+- **Not yet field-tested on a real device.**
+- **Requested by:** Bayo. Implemented by Claude (Anthropic).
+
 ### 2026-07-19 — CORRECTION: added the actual missing capability (Financial Ledger Scan)
 - **Correction to the previous entry below:** the resolution/blur fix
   earlier today optimized the *existing* name-reading feature, which
@@ -111,4 +139,5 @@ cross-pollination between the two codebases.
 ---
 
 *Maintained by Claude (Anthropic). Started 2026-07-19.*
+
 
