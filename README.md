@@ -35,6 +35,38 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-19 — CORRECTION: added the actual missing capability (Financial Ledger Scan)
+- **Correction to the previous entry below:** the resolution/blur fix
+  earlier today optimized the *existing* name-reading feature, which
+  Bayo confirmed was already working perfectly. That wasn't the actual
+  gap. **The real reason `bloom-agent-v2` exists as a sandbox in the first
+  place is that v1 could read student names but could NOT read the
+  financial ledger** (balance, term fees, total, payment status per
+  student) — that capability never existed here at all.
+- **Added: Financial Ledger Scan** — a genuinely new, separate feature
+  ported directly from `bloom-agent-v2`'s proven, field-tested pipeline
+  (same prompt, same 62%-crop technique, same payment_status enum with
+  UNCLEAR-not-OWING discipline, same Retry-After-aware rate limiting).
+  New button, new state (`ledgerFinancialData`), new Groq call
+  (`groqLedgerFinancialOCR`) — entirely separate code path from the
+  existing `groqVisionOCR`/`GROQ_OCR_PROMPT` used by the Smart Register
+  Counter, which is **completely untouched** and still works exactly as
+  it did before any of today's changes. This was the whole point of
+  building it this way — prove the capability in the sandbox, then bring
+  over *only the working result*, without touching what already worked.
+- **Show Principal panel upgraded** to show real outstanding-fees figures
+  when the agent has run the Financial Ledger Scan — falls back to the
+  honest headcount-only version (built earlier today) when they haven't.
+  Same care taken as `bloom-agent-v2`: UNCLEAR-status students are
+  excluded from the confident outstanding total, not silently counted as
+  owing.
+- **Deal object extended** with a new `ledgerFinancial` field (only
+  present if the scan was run) — additive, doesn't change the existing
+  `scannedStudents`/`scannedCount` fields Bayo's portal already reads.
+- **Not yet field-tested on a real device.**
+- **Corrected by:** Bayo, catching the scope mismatch directly. Implemented
+  by Claude (Anthropic).
+
 ### 2026-07-19 — Ported image-resolution lesson from bloom-agent-v2 + added Show Principal panel
 - **Image resolution raised 400px → 1000px.** This was the real accuracy
   bottleneck, not the rate-limit handling (which was already solid). Every
@@ -79,3 +111,4 @@ cross-pollination between the two codebases.
 ---
 
 *Maintained by Claude (Anthropic). Started 2026-07-19.*
+
