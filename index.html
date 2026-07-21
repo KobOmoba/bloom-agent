@@ -128,6 +128,16 @@
         </div>
         <!-- ═══ END AI PIPELINE ═══ -->
 
+        <!-- ═══ NEW: FINANCIAL LEDGER SCAN (optional, separate from headcount above) ═══ -->
+        <div style="background:linear-gradient(135deg,rgba(37,99,235,0.1),rgba(16,185,129,0.06));border:1.5px solid rgba(37,99,235,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
+          <div style="font-weight:800;font-size:0.85rem;color:#60a5fa;margin-bottom:0.4rem;">📊 Optional: Scan Financial Ledger</div>
+          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the fee ledger to capture each student's balance, fees, and payment status — not just a headcount. Show this to the principal as proof you already have their data ready.</p>
+          <input type="file" id="ledger-financial-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFinancialLedger(event)">
+          <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#2563eb,#059669);" onclick="document.getElementById('ledger-financial-input').click()">📷 Scan Fee Ledger Page</button>
+          <div id="ledger-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
+          <div id="ledger-financial-summary" style="display:none;margin-top:0.7rem;background:rgba(0,0,0,.2);border-radius:10px;padding:0.6rem;"></div>
+        </div>
+
         <label>Number of Students (type or upload CSV above)</label>
         <input type="number" id="s-count" placeholder="e.g. 85 — or upload CSV above to count automatically" oninput="autoTier()">
         <label>Select Pricing Tier</label>
@@ -293,7 +303,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js?v=20260719a"></script>
+<script src="app.js?v=20260719b"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
@@ -423,6 +433,11 @@
         <div id="sp-class" style="font-size:1.1rem;font-weight:800;color:var(--text);"></div>
         <div style="font-size:0.72rem;color:var(--sub);">Class Detected</div>
       </div>
+    </div>
+
+    <div id="sp-financial-box" style="display:none;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.3);border-radius:var(--radius);padding:1rem;margin-bottom:1.2rem;">
+      <div id="sp-outstanding" style="font-size:1.6rem;font-weight:800;color:var(--danger);"></div>
+      <div id="sp-financial-sub" style="font-size:0.78rem;color:var(--sub);"></div>
     </div>
 
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1.2rem;text-align:left;">
