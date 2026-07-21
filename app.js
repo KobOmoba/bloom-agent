@@ -258,25 +258,58 @@ function openShowPrincipalPanel(){
   $('sp-school-name').textContent = name.toUpperCase();
   $('sp-location').textContent = phone ? 'Contact: ' + phone : '';
 
-  const count = csvStudentCount || parseInt($('s-count')?.value) || 0;
-  $('sp-count').textContent = count || '—';
+  // Prefer the richer Financial Ledger Scan data if the agent ran it —
+  // falls back to the headcount-only Smart Register Counter data otherwise.
+  const hasFinancial = ledgerFinancialData && ledgerFinancialData.students && ledgerFinancialData.students.length;
+  const financialBox = $('sp-financial-box');
 
-  const cls = (typeof _lastDetectedClass !== 'undefined' && _lastDetectedClass) ? _lastDetectedClass : '—';
-  $('sp-class').textContent = cls;
+  if (hasFinancial) {
+    const students = ledgerFinancialData.students;
+    $('sp-count').textContent = students.length;
+    $('sp-class').textContent = ledgerFinancialData.detected_class || '—';
+
+    let tDue = 0, tPaid = 0, reviewCnt = 0, reviewAmt = 0, owingCnt = 0;
+    students.forEach(s => {
+      if (s.payment_status === 'UNCLEAR') { reviewCnt++; reviewAmt += (s.termFees||0); return; }
+      tDue += (s.termFees||0);
+      if (s.payment_status === 'PAID') tPaid += (s.total||s.termFees||0);
+      if (s.payment_status === 'OWING' || s.payment_status === 'PARTIAL') owingCnt++;
+    });
+    const outstanding = Math.max(0, tDue - tPaid);
+    financialBox.style.display = 'block';
+    $('sp-outstanding').textContent = '₦' + outstanding.toLocaleString('en-NG');
+    $('sp-financial-sub').textContent = owingCnt + ' student' + (owingCnt!==1?'s':'') + ' with outstanding fees' +
+      (reviewCnt ? ' · ' + reviewCnt + ' need' + (reviewCnt===1?'s':'') + ' manual review (₦' + reviewAmt.toLocaleString('en-NG') + ' not counted above)' : '');
+
+    const listEl = $('sp-names-list');
+    listEl.innerHTML = students.map((s, i) => {
+      const badge = s.payment_status === 'PAID' ? '<span style="color:var(--money);">✓ Paid</span>' :
+                    s.payment_status === 'PARTIAL' ? '<span style="color:var(--warn);">½ Partial</span>' :
+                    s.payment_status === 'OWING' ? '<span style="color:var(--danger);">✗ Owing</span>' :
+                    '<span style="color:#c4b5fd;">? Review</span>';
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);"><span>' + (i+1) + '. ' + s.name.replace(/</g,'&lt;') + '</span>' + badge + '</div>';
+    }).join('');
+  } else {
+    financialBox.style.display = 'none';
+    const count = csvStudentCount || parseInt($('s-count')?.value) || 0;
+    $('sp-count').textContent = count || '—';
+    const cls = (typeof _lastDetectedClass !== 'undefined' && _lastDetectedClass) ? _lastDetectedClass : '—';
+    $('sp-class').textContent = cls;
+
+    const listEl = $('sp-names-list');
+    const names = (typeof csvParsedNames !== 'undefined' && csvParsedNames.length) ? csvParsedNames.map(s => s.name) : [];
+    if (names.length) {
+      listEl.innerHTML = names.map((n, i) => '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + (i+1) + '. ' + n.replace(/</g,'&lt;') + '</div>').join('');
+    } else {
+      listEl.innerHTML = '<div style="color:var(--sub);text-align:center;padding:1rem 0;">No names captured yet — use the Smart Register Counter above first.</div>';
+    }
+  }
 
   const tierEl = $('sp-tier');
   if (selTier) {
     tierEl.textContent = selTier.name + ' — ₦' + Number(selTier.price).toLocaleString('en-NG') + '/term';
   } else {
     tierEl.textContent = 'Not yet selected';
-  }
-
-  const listEl = $('sp-names-list');
-  const names = (typeof csvParsedNames !== 'undefined' && csvParsedNames.length) ? csvParsedNames.map(s => s.name) : [];
-  if (names.length) {
-    listEl.innerHTML = names.map((n, i) => '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + (i+1) + '. ' + n.replace(/</g,'&lt;') + '</div>').join('');
-  } else {
-    listEl.innerHTML = '<div style="color:var(--sub);text-align:center;padding:1rem 0;">No names captured yet — use the Smart Register Counter above first.</div>';
   }
 
   $('show-principal-panel').style.display = 'block';
@@ -332,6 +365,11 @@ async function submitDeal(){
     // AI-scanned student names — used by onboarding agent to pre-load school
     scannedStudents: csvParsedNames.length ? csvParsedNames : [],
     scannedCount: csvParsedNames.length || 0,
+    // NEW: financial ledger data (balance/fees/payment status per student),
+    // only present if the agent ran the separate Financial Ledger Scan.
+    // Keeps the existing scannedStudents/scannedCount fields exactly as
+    // they were — this is purely additive.
+    ledgerFinancial: (ledgerFinancialData && ledgerFinancialData.students.length) ? ledgerFinancialData : null,
     onboardingStatus: 'awaiting_principal'
   };
 
@@ -361,6 +399,8 @@ async function submitDeal(){
     document.querySelectorAll('.tier').forEach(t=>t.classList.remove('sel'));
     selTier=null; $('comm-box').style.display='none';
     resetCSVCount();
+    ledgerFinancialData = null;
+    const ledgerSummaryEl = $('ledger-financial-summary'); if (ledgerSummaryEl) ledgerSummaryEl.style.display = 'none';
   }catch(e){
     // Write failed — queue it so the deal is never lost
     SQ.push({t:'deal',d:deal});
@@ -455,6 +495,12 @@ async function renderEarnings(){
 
 let csvStudentCount = 0;
 let csvParsedNames  = [];
+// Separate from csvParsedNames on purpose — the existing name-only Smart
+// Register Counter (csvParsedNames) is untouched and still works exactly
+// as before. This holds the RICHER data (balance/fees/payment status per
+// student) from the new Financial Ledger Scan, only populated if the agent
+// runs that separate feature.
+let ledgerFinancialData = null; // {detected_class, term, year, students:[...]}
 
 
 
@@ -1357,8 +1403,246 @@ async function groqVisionOCR(base64, mime, _retry) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// FINANCIAL LEDGER SCAN — NEW capability, separate from Smart Register
+// Counter above. That feature (names only) is untouched and still works
+// exactly as before. This is the actual missing capability that
+// bloom-agent-v2 was built as a sandbox to prove out: reading balance,
+// term fees, total, and payment status per student — not just a headcount.
+// Ported directly from bloom-agent-v2's proven, field-tested pipeline
+// (63 students / 5 classes / 90% confidence on a real 5-page test).
+// ═══════════════════════════════════════════════════════════════════════
 
-// ── OCR Upload Overlay ──────────────────────────────────────────────────
+const LEDGER_FINANCIAL_READING_DISCIPLINE = [
+  'READING DISCIPLINE — apply to every field, always:',
+  '- Transcribe exactly what is written. Do not paraphrase or "clean up" text.',
+  '- For NUMBERS: read digit by digit, not at a glance. Common handwriting',
+  '  confusions to double-check: 7 vs 1, 0 vs 6, 4 vs 9, 3 vs 8, 5 vs 6/8.',
+  '- For STATUS fields: actively scan for explicit keywords, ticks, or',
+  '  strikethroughs BEFORE deciding a value. Never pick a default status',
+  '  just because nothing else is obviously visible — that produces a',
+  '  confidently wrong answer, which is worse than no answer.',
+  '- If a field is illegible or you are not confident, output "UNCLEAR"',
+  '  for that field rather than guessing a plausible-looking value.'
+].join('\n');
+
+const LEDGER_FINANCIAL_PROMPT = [
+  'You are reading the LEFT ~62% of a Nigerian SCHOOL FEES LEDGER (handwritten).',
+  'This image is cropped — the 2nd and 3rd payment-installment columns are',
+  'NOT visible. Do not look for them. The 1st part-payment/teller columns ARE visible.',
+  'The columns you can see are:',
+  '  Col 1: SERIAL NO (1, 2, 3...)',
+  '  Col 2: SURNAME (family name — all caps)',
+  '  Col 3: FIRSTNAME (given name — all caps)',
+  '  Col 4: BALANCE FROM LAST TERM (debt carried forward — 0 or blank means none)',
+  '  Col 5: CURRENT TERM FEES (the fee charged this term, e.g. 24000, 26000, 28000)',
+  '  Col 6: TOTAL (col4 + col5 = everything this student owes)',
+  '  Col 7: 1ST PART PAYMENT (an amount, OR a handwritten status word)',
+  '  Col 8: TELLER NO / RECEIPT NO (often overwritten with a status word instead of a number)',
+  '',
+  LEDGER_FINANCIAL_READING_DISCIPLINE,
+  '',
+  'PAYMENT STATUS:',
+  'Look in columns 7-8 (and the space around/above/below them — handwriting is',
+  'often diagonal or overflows its cell) for any of these words or close variants:',
+  '  "FULLY PAID", "FULL PAID", "FULLY", "PAID", "F/PAID", "PART PAYMENT"',
+  'Decide payment_status using this priority:',
+  '  1. If "FULLY PAID"/"FULL PAID"/"FULLY"+"PAID" appears anywhere on the row -> "PAID"',
+  '  2. Else if a part-payment amount is visible and it is LESS than the total -> "PARTIAL"',
+  '  3. Else if the row is completely blank in columns 7-8 with no annotation -> "UNCLEAR"',
+  '  4. Only mark "OWING" if there is clear evidence of a remaining unpaid amount',
+  '     (a positive number written as still-owed, or an explicit note) — never as a',
+  '     silent default just because you found nothing else.',
+  'When in doubt between OWING and UNCLEAR, choose UNCLEAR — a wrong confident',
+  '"OWING" tells a parent who already paid that they still owe money.',
+  '',
+  'YOUR TASK: For every numbered student row return:',
+  '  name           = SURNAME + space + FIRSTNAME',
+  '  balance_bf     = col 4 value (integer, 0 if blank or dash)',
+  '  termFees       = col 5 value (integer)',
+  '  total          = col 6 value (integer)',
+  '  payment_status = one of "PAID", "PARTIAL", "OWING", "UNCLEAR"',
+  '  detected_class = class label at the top of the page (e.g. K-G, BASIC FOUR, NURSERY 1, BASIC THREE)',
+  '  year           = year written at top of ledger (e.g. 2026)',
+  '  term           = term number at top of ledger (e.g. 3)',
+  '',
+  'RULES:',
+  '1. Every numbered row = one student. Read ALL rows. A page typically has 10-30 students.',
+  '2. Crossed-out numbers: ignore the crossed-out value, read the correction written nearby.',
+  '3. SELF-CHECK before finalizing each row: total must equal balance_bf + termFees.',
+  '   If they do not match, re-read that row\'s digits and correct before moving on.',
+  '4. Return ONLY valid JSON — no markdown fences, no explanation text.',
+  '',
+  'EXAMPLE OUTPUT:',
+  '{"detected_class":"K-G","year":"2026","term":"3","students":[',
+  '{"name":"OLIYIDE GODWIN","balance_bf":0,"termFees":24000,"total":24000,"payment_status":"PAID"},',
+  '{"name":"KASALI RASAQ","balance_bf":5000,"termFees":24000,"total":29000,"payment_status":"PARTIAL"},',
+  '{"name":"JOHN DEBORAH","balance_bf":3000,"termFees":26000,"total":29000,"payment_status":"UNCLEAR"}',
+  ']}'
+].join('\n');
+
+// Crop to left 62% before scaling — same technique proven in bloom-agent-v2.
+// Payment-status annotations physically sit right around columns 6-7, which
+// a naive 50% crop cuts through; 62% reliably includes them.
+function compressLedgerForFinancialScan(dataURL) {
+  return new Promise(async resolve => {
+    const img = new Image();
+    img.onload = async () => {
+      const origW = img.width, origH = img.height;
+      const cropW = Math.round(origW * 0.62);
+      const scale = Math.min(1, 1024 / cropW);
+      const outW = Math.round(cropW * scale);
+      const outH = Math.round(origH * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = outW; canvas.height = outH;
+      canvas.getContext('2d').drawImage(img, 0, 0, cropW, origH, 0, 0, outW, outH);
+
+      let finalCanvas = canvas;
+      try {
+        const cvReady = await loadOpenCV();
+        if (cvReady) finalCanvas = await preprocessWithOpenCV(canvas);
+      } catch (e) { console.warn('[Ledger scan] OpenCV skip:', e.message); }
+
+      resolve(finalCanvas.toDataURL('image/jpeg', 0.95));
+    };
+    img.onerror = () => resolve(dataURL);
+    img.src = dataURL;
+  });
+}
+
+function parseLedgerFinancialJSON(text) {
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let parsed = {};
+  try { parsed = JSON.parse(text); }
+  catch (e) {
+    const m = text.match(/\{[\s\S]*\}/);
+    try { parsed = m ? JSON.parse(m[0]) : {}; } catch (e2) { parsed = {}; }
+  }
+  let students = Array.isArray(parsed.students) ? parsed.students : [];
+  // Safety net: salvage complete student objects even from truncated/
+  // invalid JSON rather than losing the whole page — same fix proven
+  // necessary in bloom-agent-v2.
+  if (!students.length) {
+    const objMatches = text.match(/\{[^{}]*"name"[^{}]*\}/g) || [];
+    objMatches.forEach(m => { try { const o = JSON.parse(m); if (o && o.name) students.push(o); } catch(e){} });
+  }
+  return {
+    detected_class: parsed.detected_class || '',
+    term: parsed.term || '',
+    year: parsed.year || '',
+    students
+  };
+}
+
+async function groqLedgerFinancialOCR(base64, mime, _retry) {
+  if (_retry === undefined) _retry = 0;
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), 45000);
+  let resp;
+  try {
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Authorization': 'Bearer ' + getGroqKey(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: GROQ_OCR_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+          { type: 'text', text: LEDGER_FINANCIAL_PROMPT }
+        ]}],
+        temperature: 0,
+        max_tokens: 4096,
+        reasoning_format: 'hidden',
+        response_format: { type: 'json_object' }
+      })
+    });
+    clearTimeout(fetchTimer);
+  } catch (fetchErr) {
+    clearTimeout(fetchTimer);
+    if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return groqLedgerFinancialOCR(base64, mime, _retry + 1); }
+    throw new Error(fetchErr.name === 'AbortError' ? 'Groq timed out' : fetchErr.message);
+  }
+  if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
+    if (_retry >= 4) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq rate-limited after multiple retries'); }
+    const retryAfter = resp.headers.get('retry-after');
+    let waitMs = parseFloat(retryAfter) * 1000;
+    if (!waitMs || isNaN(waitMs)) waitMs = 20000;
+    waitMs = Math.min(Math.max(waitMs, 3000), 65000);
+    await new Promise(r => setTimeout(r, waitMs));
+    return groqLedgerFinancialOCR(base64, mime, _retry + 1);
+  }
+  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq ' + resp.status); }
+  const data = await resp.json();
+  let text = data.choices?.[0]?.message?.content || '';
+  text = text.replace(/<ildo>[\s\S]*?<\/ildo>/gi, '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  return parseLedgerFinancialJSON(text);
+}
+
+// Entry point wired to the "Scan Financial Ledger" button/input
+async function scanFinancialLedger(event) {
+  const file = event.target.files[0]; if (!file) return;
+  event.target.value = '';
+  const fb = document.getElementById('ledger-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  if (!getGroqKey()) { show('❌ Groq key not loaded yet — wait a moment and try again.'); return; }
+  show('📸 Reading financial ledger...');
+  try {
+    const reader = new FileReader();
+    const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
+    const compressed = await compressLedgerForFinancialScan(dataURL);
+    const base64 = compressed.split(',')[1];
+    const result = await groqLedgerFinancialOCR(base64, 'image/jpeg');
+    if (!result.students.length) { show('❌ No students found — try a clearer, straighter photo.'); return; }
+
+    if (!ledgerFinancialData) ledgerFinancialData = { detected_class: '', term: '', year: '', students: [] };
+    if (result.detected_class) ledgerFinancialData.detected_class = result.detected_class;
+    if (result.term) ledgerFinancialData.term = result.term;
+    if (result.year) ledgerFinancialData.year = result.year;
+
+    const seen = new Set(ledgerFinancialData.students.map(s => s.name.toLowerCase().replace(/[^a-z]/g,'')));
+    let added = 0;
+    result.students.forEach(s => {
+      if (!s.name) return;
+      s.name = String(s.name).toUpperCase().trim();
+      const key = s.name.toLowerCase().replace(/[^a-z]/g,'');
+      if (seen.has(key)) return;
+      seen.add(key);
+      s.balance_bf = s.balance_bf || 0;
+      s.termFees = s.termFees || s.total || 0;
+      s.total = s.total || (s.balance_bf + s.termFees);
+      s.payment_status = (s.payment_status || 'UNCLEAR').toUpperCase();
+      ledgerFinancialData.students.push(s);
+      added++;
+    });
+
+    show('✅ ' + added + ' student' + (added !== 1 ? 's' : '') + ' added — ' + ledgerFinancialData.students.length + ' total so far.');
+    renderLedgerFinancialSummary();
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 4000);
+  } catch (e) {
+    show('❌ ' + (e.message || 'Could not read ledger. Try a clearer photo.'));
+  }
+}
+
+function renderLedgerFinancialSummary() {
+  const el = document.getElementById('ledger-financial-summary');
+  if (!el || !ledgerFinancialData || !ledgerFinancialData.students.length) { if (el) el.style.display = 'none'; return; }
+  const students = ledgerFinancialData.students;
+  const paid = students.filter(s => s.payment_status === 'PAID').length;
+  const part = students.filter(s => s.payment_status === 'PARTIAL').length;
+  const owing = students.filter(s => s.payment_status === 'OWING').length;
+  const review = students.filter(s => s.payment_status === 'UNCLEAR').length;
+  el.style.display = 'block';
+  el.innerHTML = '<div style="font-weight:800;font-size:0.85rem;margin-bottom:6px;">📊 ' + students.length + ' students · ' + (ledgerFinancialData.detected_class || 'class unknown') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:0.72rem;">' +
+    (paid ? '<span style="background:rgba(16,185,129,.15);color:var(--money);padding:2px 8px;border-radius:10px;">' + paid + ' Paid</span>' : '') +
+    (part ? '<span style="background:rgba(245,158,11,.15);color:var(--warn);padding:2px 8px;border-radius:10px;">' + part + ' Partial</span>' : '') +
+    (owing ? '<span style="background:rgba(239,68,68,.15);color:var(--danger);padding:2px 8px;border-radius:10px;">' + owing + ' Owing</span>' : '') +
+    (review ? '<span style="background:rgba(139,92,246,.15);color:#c4b5fd;padding:2px 8px;border-radius:10px;">' + review + ' Needs Review</span>' : '') +
+    '</div>';
+}
+
+
 function ocrOverlayShow(filename) {
   const el = document.getElementById('ocr-overlay');
   if (!el) return;
