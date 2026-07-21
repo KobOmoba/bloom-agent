@@ -69,7 +69,7 @@
         <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1.5px solid rgba(124,58,237,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
           <div style="font-weight:800;font-size:0.85rem;color:#a78bfa;margin-bottom:0.4rem;">📸 Scan School Signboard</div>
           <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the school's signboard — AI reads the name, address, LGA and state automatically.</p>
-          <input type="file" id="signboard-input" accept="image/*" capture="environment" style="display:none;" onchange="scanSignboard(event)">
+          <input type="file" id="signboard-input" accept="image/*" style="display:none;" onchange="scanSignboard(event)">
           <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('signboard-input').click()">📷 Scan Signboard</button>
           <div id="signboard-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
         </div>
@@ -329,7 +329,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js?v=20260719c"></script>
+<script src="app.js?v=20260719d"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
