@@ -3,493 +3,397 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#080f1a">
-<title>Educational Bloom · Agent</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#7c3aed">
-  <link rel="apple-touch-icon" href="icon-192x192.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<meta name="theme-color" content="#06091a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>EduBloom Agent v2</title>
+<style>
+:root{--bg:#06091a;--s1:#0d1226;--s2:#141d35;--s3:#1e2b4a;--border:rgba(100,120,200,.15);--text:#e2e8f0;--sub:#64748b;--brand:#2563eb;--money:#10b981;--danger:#ef4444;--warn:#f59e0b;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;-webkit-tap-highlight-color:transparent;}
+/* LOGIN */
+#login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem 1.25rem;background:var(--bg);}
+.logo h1{font-size:1.8rem;font-weight:900;color:var(--brand);text-align:center;}
+.logo p{font-size:.82rem;color:var(--sub);text-align:center;margin-top:4px;}
+.login-card{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:1.5rem;width:100%;max-width:360px;margin-top:1.5rem;}
+/* APP */
+#app{display:none;flex-direction:column;min-height:100vh;}
+/* HEADER */
+.hdr{background:var(--s1);border-bottom:1px solid var(--border);padding:.65rem 1rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;}
+.hdr-left{display:flex;align-items:center;gap:.5rem;}
+.hdr-brand{font-size:.88rem;font-weight:800;color:var(--brand);}
+.timer{background:var(--s3);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:.7rem;font-family:monospace;color:var(--money);}
+/* STEP BAR */
+.step-bar{background:var(--s1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:.6rem 1rem;gap:0;}
+.step-item{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;}
+.step-dot{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:var(--sub);flex-shrink:0;transition:all .25s;}
+.step-dot.active{border-color:var(--brand);background:var(--brand);color:#fff;box-shadow:0 0 10px rgba(37,99,235,.4);}
+.step-dot.done{border-color:var(--money);background:var(--money);color:#fff;}
+.step-lbl{font-size:.58rem;color:var(--sub);white-space:nowrap;}
+.step-item.active .step-lbl{color:var(--brand);}
+.step-item.done .step-lbl{color:var(--money);}
+.step-line{flex:1;height:2px;background:var(--border);margin-bottom:14px;transition:background .25s;}
+.step-line.done{background:var(--money);}
+/* CONTENT */
+.content{flex:1;padding:1rem 1.25rem;max-width:580px;width:100%;margin:0 auto;}
+.step-screen{display:none;}.step-screen.on{display:block;}
+/* CARDS */
+.card{background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:.9rem;margin-bottom:.7rem;}
+.ct{font-weight:700;font-size:.88rem;margin-bottom:.55rem;}
+/* BUTTONS */
+button{cursor:pointer;font-family:inherit;border:none;border-radius:10px;font-weight:600;transition:opacity .15s;}
+.btn-p{background:var(--brand);color:#fff;width:100%;padding:.82rem;font-size:.92rem;}
+.btn-p:active{opacity:.85;}
+.btn-g{background:var(--s3);color:var(--text);border:1px solid var(--border);padding:.6rem 1rem;}
+.btn-money{background:var(--money);color:#fff;width:100%;padding:.75rem;font-size:.9rem;}
+.btn-sm{padding:.38rem .85rem;font-size:.76rem;}
+.btn-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;}
+/* INPUTS */
+label{display:block;font-size:.75rem;font-weight:600;color:var(--sub);margin-bottom:3px;margin-top:.6rem;}
+input,select{width:100%;background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:.62rem .75rem;color:var(--text);font-size:.86rem;font-family:inherit;outline:none;-webkit-appearance:none;appearance:none;}
+input::placeholder{color:var(--sub);}
+input:focus,select:focus{border-color:var(--brand);}
+/* CAPTURE BTN */
+.cap-btn{background:var(--s2);border:2px dashed var(--border);border-radius:14px;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;padding:1rem;cursor:pointer;position:relative;overflow:hidden;transition:border-color .2s;margin-bottom:.5rem;}
+.cap-btn:active{border-color:var(--brand);}
+.cap-btn.captured{border-style:solid;border-color:var(--money);}
+.cap-btn.captured img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;opacity:.75;}
+.cap-icon{font-size:1.8rem;position:relative;z-index:1;}
+.cap-lbl{font-size:.76rem;color:var(--sub);text-align:center;position:relative;z-index:1;}
+.cap-retake{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.75);color:#fff;border-radius:7px;padding:3px 10px;font-size:.68rem;z-index:2;border:none;cursor:pointer;}
+/* PROGRESS */
+.prog-bg{background:var(--s3);border-radius:4px;height:5px;overflow:hidden;margin:6px 0;}
+.prog-fill{height:100%;background:var(--brand);border-radius:4px;width:0;transition:width .4s;}
+.proc-status{font-size:.76rem;color:var(--sub);text-align:center;margin-top:4px;}
+/* LIVE FEED */
+.live-feed{background:var(--s1);border:1px solid var(--border);border-radius:10px;max-height:180px;overflow-y:auto;padding:.4rem;}
+.live-item{display:flex;align-items:center;gap:7px;padding:3px 5px;animation:sli .25s ease;}
+.field-row{display:flex;align-items:center;gap:6px;margin-bottom:.55rem;}
+.field-row input{flex:1;margin-bottom:0;}
+.ocr-field-btn{background:var(--brand);border:none;border-radius:8px;padding:0 10px;height:38px;font-size:1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.ocr-field-btn:active{opacity:.75;}
+.ocr-scanning{opacity:.5;pointer-events:none;}
+.live-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+@keyframes sli{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:none;}}
+/* CLASS GROUPS */
+.class-g{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:.7rem;margin-bottom:.6rem;}
+.class-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;}
+.class-name{font-weight:700;font-size:.84rem;}
+.cbar-bg{height:7px;background:var(--s3);border-radius:4px;overflow:hidden;display:flex;}
+.cbar-paid{height:100%;background:var(--money);}
+.cbar-part{height:100%;background:var(--warn);}
+.stu-row{display:flex;align-items:center;gap:5px;padding:3px 0;border-bottom:1px solid var(--border);}
+.stu-inp{background:var(--s1);border:1px solid transparent;border-radius:6px;padding:3px 7px;font-size:.76rem;color:var(--text);width:100%;margin:0;}
+.stu-inp:focus{border-color:var(--brand);outline:none;}
+.conf-bg{width:34px;height:5px;background:var(--s3);border-radius:3px;flex-shrink:0;}
+.conf-bar{height:100%;border-radius:3px;}
+.badge{display:inline-block;padding:2px 7px;border-radius:12px;font-size:.66rem;font-weight:700;}
+.bg{background:rgba(16,185,129,.14);color:var(--money);}
+.ba{background:rgba(245,158,11,.14);color:var(--warn);}
+.br{background:rgba(239,68,68,.14);color:var(--danger);}
+.bq{background:rgba(139,92,246,.16);color:#c4b5fd;}
+.bb{background:rgba(37,99,235,.14);color:#60a5fa;}
+/* STATS */
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;margin-bottom:.7rem;}
+.stat-box{background:var(--s3);border-radius:10px;padding:.65rem .4rem;text-align:center;}
+.stat-n{font-size:1.4rem;font-weight:800;line-height:1;}
+.stat-l{font-size:.6rem;color:var(--sub);margin-top:2px;}
+/* PITCH */
+.pitch-hero{background:linear-gradient(135deg,#0d1226 0%,#141d35 100%);border:1px solid var(--border);border-radius:18px;padding:1.4rem;text-align:center;margin-bottom:.9rem;}
+.pitch-name{font-size:1.2rem;font-weight:800;margin-bottom:2px;}
+.pitch-loc{font-size:.76rem;color:var(--sub);}
+.pitch-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;margin:1rem 0;}
+.pitch-stat{background:var(--s3);border-radius:12px;padding:.65rem .4rem;text-align:center;}
+.p-stat-n{font-size:1.45rem;font-weight:800;line-height:1;}
+.p-stat-l{font-size:.6rem;color:var(--sub);margin-top:2px;}
+.pitch-ow{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:.7rem;text-align:center;margin-top:.7rem;}
+.pitch-ow-n{font-size:1.3rem;font-weight:800;color:var(--danger);}
+.pitch-ow-l{font-size:.7rem;color:var(--sub);}
+/* PRESENT MODE */
+body.presenting .hdr,body.presenting .step-bar,body.presenting #sec-step1,body.presenting #sec-step2,body.presenting #sec-step4,body.presenting .present-hint,body.presenting .present-nav,body.presenting .bottom-nav{display:none!important;}
+#present-exit{position:fixed;bottom:1rem;right:1rem;background:rgba(0,0,0,.85);color:var(--sub);border:1px solid var(--border);border-radius:8px;padding:5px 14px;font-size:.7rem;z-index:9999;display:none;}
+body.presenting #present-exit{display:block;}
+body.presenting{background:#000;}
+body.presenting #app{background:#000;}
+body.presenting #sec-step3{background:var(--bg);min-height:100vh;display:flex;flex-direction:column;justify-content:center;}
+/* REVIEW */
+.rv-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.83rem;}
+.rv-row:last-child{border-bottom:none;}
+.rv-l{color:var(--sub);}
+.rv-v{font-weight:600;text-align:right;max-width:60%;}
+/* NAV */
+.bottom-nav{background:var(--s1);border-top:1px solid var(--border);display:flex;padding:.35rem 0;position:sticky;bottom:0;z-index:100;}
+.nlink{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:.38rem;border:none;background:transparent;color:var(--sub);font-size:.6rem;cursor:pointer;}
+.nlink.on{color:var(--brand);}
+.nlink-ic{font-size:1.05rem;}
+/* MISC */
+.sdot{font-size:.7rem;}.sd-on{color:var(--money);}.sd-off{color:var(--danger);}.sd-sync{color:var(--warn);}
+.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:.6rem;font-size:.8rem;color:#fca5a5;display:none;margin-top:.6rem;}
+.fb{padding:.6rem;border-radius:8px;font-size:.8rem;margin-top:.5rem;display:none;}
+.fb.ok{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);color:#6ee7b7;}
+.fb.bad{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#fca5a5;}
+.ai-hint{font-size:.72rem;color:var(--money);margin-bottom:.5rem;display:none;}
+.spacer{height:1.5rem;}
+input[list]::-webkit-calendar-picker-indicator{opacity:0;}
+</style>
 </head>
 <body>
 
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
 <!-- LOGIN -->
-<div id="login" class="login" style="display:flex;">
-  <div class="login-box">
-    <div class="login-logo">🌸 Bloom Agent</div>
-    <div class="login-sub">Educational Bloom™ by AariNAT Company</div>
-    <div class="login-tabs">
-      <button class="ltab on" onclick="setTab('phone')">Login</button>
-      <button class="ltab" onclick="setTab('register')">New Agent?</button>
+<div id="login">
+  <div class="logo">
+    <h1>🌸 EduBloom</h1>
+    <p>Agent App · v2 AI Onboarding</p>
+  </div>
+  <div class="login-card">
+    <label>Your WhatsApp Number</label>
+    <input id="l-phone" type="tel" placeholder="e.g. 08038740131" autocomplete="tel">
+    <button class="btn-p" id="l-btn" onclick="doLogin()" style="margin-top:.75rem;">▶ Login</button>
+    <div class="err" id="l-err"></div>
+    <div id="req-access-box" style="display:none;margin-top:.75rem;border-top:1px solid var(--border);padding-top:.75rem;">
+      <p style="font-size:.74rem;color:var(--sub);margin-bottom:.5rem;">Not yet registered? Send Bayo a request:</p>
+      <label>Your Full Name</label>
+      <input id="req-name" placeholder="e.g. David Adeyemi" autocomplete="name">
+      <label>Your Area / Zone</label>
+      <input id="req-area" placeholder="e.g. Abeokuta South">
+      <button onclick="requestAccess()" style="background:var(--money);color:#fff;width:100%;padding:.65rem;border-radius:10px;font-weight:700;font-size:.84rem;margin-top:.55rem;border:none;cursor:pointer;">📲 Send Request to Bayo via WhatsApp</button>
     </div>
-    <div id="phone-form">
-      <label>Your WhatsApp Number</label>
-      <input type="tel" id="l-phone" placeholder="e.g. 2348012345678" onkeydown="if(event.key==='Enter')doLogin()">
-      <button id="l-btn" class="btn-brand" onclick="doLogin()">▶ Login</button>
-    </div>
-    <div id="register-form" style="display:none;">
-      <p style="font-size:0.85rem;color:var(--sub);padding:1rem;background:#0a1525;border-radius:10px;line-height:1.6;">
-        Agent accounts are created by AariNAT admin.<br><br>
-        📞 Call or WhatsApp Bayo:<br>
-        <strong style="color:var(--text);">+234 814 507 3941</strong><br><br>
-        Once registered, come back and login with your phone number.
-      </p>
-      <a href="https://wa.me/2348145073941?text=I%20want%20to%20become%20an%20Educational%20Bloom%20agent" target="_blank" style="text-decoration:none;">
-        <button class="btn-money">💬 WhatsApp AariNAT to Register</button>
-      </a>
-    </div>
-    <div id="login-err" class="err-box"></div>
-  </div><!-- /.login-box -->
-</div><!-- /#login — ✅ these two closing tags were missing, causing app to hide inside login -->
+    <div id="sync-login" class="sdot sd-off" style="text-align:center;margin-top:.65rem;font-size:.72rem;">● Offline</div>
+  </div>
+</div>
 
 <!-- APP -->
-<div id="app" style="display:none;">
-  <header class="hdr">
-    <div>
-      <div class="hdr-title">🌸 Bloom Agent</div>
-      <div class="hdr-sub" id="agent-name-hdr">—</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span id="sync" class="dot dot-off">● Offline</span>
-      <button class="btn-sm btn-ghost" onclick="logout()">Logout</button>
-    </div>
-  </header>
+<div id="app">
 
-  <main class="wrap">
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hdr-left">
+      <span class="hdr-brand">🌸 EduBloom</span>
+      <span style="font-size:.65rem;color:var(--sub);background:var(--s3);border-radius:8px;padding:1px 6px;">v2</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:.4rem;">
+      <span class="timer" id="timerDisplay">00:00</span>
+      <span id="sync" class="sdot sd-off">●</span>
+    </div>
+  </div>
 
-    <!-- SUBMIT -->
-    <section id="sec-submit" class="sec on">
+  <!-- WIZARD SECTION -->
+  <div id="sec-wizard" style="display:block;flex:1;overflow-y:auto;padding-bottom:60px;">
+
+    <!-- Step Bar -->
+    <div class="step-bar" id="step-bar">
+      <div class="step-item active" id="si-1"><div class="step-dot active" id="sd-1">1</div><div class="step-lbl">School</div></div>
+      <div class="step-line" id="sl-1"></div>
+      <div class="step-item" id="si-2"><div class="step-dot" id="sd-2">2</div><div class="step-lbl">Students</div></div>
+      <div class="step-line" id="sl-2"></div>
+      <div class="step-item" id="si-3"><div class="step-dot" id="sd-3">3</div><div class="step-lbl">Show</div></div>
+      <div class="step-line" id="sl-3"></div>
+      <div class="step-item" id="si-4"><div class="step-dot" id="sd-4">4</div><div class="step-lbl">Submit</div></div>
+    </div>
+
+    <!-- STEP 1: School Info -->
+    <div id="sec-step1" class="step-screen on">
+      <div class="content">
+        <div class="card">
+          <div class="ct">📸 Step 1: School Information</div>
+          <p style="font-size:.76rem;color:var(--sub);margin-bottom:.7rem;">Photograph the school signboard — AI reads the name and address automatically.</p>
+          <div class="cap-btn" id="signCap" onclick="captureSignboard()">
+            <div class="cap-icon">🏫</div>
+            <div class="cap-lbl">📷 Camera  ·  🖼️ Gallery</div>
+            <div class="cap-lbl" style="font-size:.65rem;margin-top:2px;">AI extracts name, address, state</div>
+          </div>
+          <input type="file" accept="image/*" id="sign-input" style="display:none">
+          <div id="sign-proc" style="display:none;margin-top:.6rem;">
+            <div class="prog-bg"><div class="prog-fill" id="sign-prog"></div></div>
+            <div class="proc-status" id="sign-status">Reading signboard...</div>
+          </div>
+          <div style="text-align:center;margin:.4rem 0;">
+            <button class="btn-g btn-sm" onclick="skipSignboard()">Skip — enter manually</button>
+          </div>
+        </div>
+
+        <div class="card" id="school-fields" style="display:none;">
+          <div class="ct">📋 School Details</div>
+          <div class="ai-hint" id="ai-hint-sign"></div>
+          <label>School Name *</label>
+          <input id="f-school-name" placeholder="e.g. GRACELAND SCHOOLS" autocomplete="off">
+          <label>Address</label>
+          <input id="f-address" placeholder="e.g. 12 Akin Street, Abeokuta">
+          <label>State *</label>
+          <input id="f-state" placeholder="e.g. Ogun" list="states-list">
+          <datalist id="states-list">
+            <option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option>
+            <option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option>
+            <option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>Gombe</option>
+            <option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option>
+            <option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option>
+            <option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option>
+            <option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option>
+            <option>Zamfara</option><option>FCT</option>
+          </datalist>
+          <label>LGA</label>
+          <input id="f-lga" placeholder="e.g. Abeokuta South">
+          <label>Principal Name *</label>
+          <input id="f-principal" placeholder="e.g. Mr. James Adeyemi">
+          <label>Principal WhatsApp *</label>
+          <input id="f-phone" type="tel" placeholder="e.g. 08012345678">
+          <label>Email (optional)</label>
+          <input id="f-email" type="email" placeholder="admin@school.ng">
+        </div>
+
+        <div class="card" id="terms-card" style="display:none;">
+          <div class="ct">📅 Subscription</div>
+          <label>Number of Terms</label>
+          <select id="f-terms">
+            <option value="1">1 Term</option>
+            <option value="2">2 Terms</option>
+            <option value="3">3 Terms</option>
+          </select>
+          <p style="font-size:.7rem;color:var(--sub);margin-top:.4rem;">Plan auto-selected after scanning register.</p>
+        </div>
+
+        <button class="btn-p" id="btn-step1-next" style="display:none;" onclick="validateStep1()">Next: Scan Fee Register →</button>
+        <div class="spacer"></div>
+      </div>
+    </div>
+
+    <!-- STEP 2: Student Records -->
+    <div id="sec-step2" class="step-screen">
+      <div class="content">
+        <div class="card">
+          <div class="ct">📚 Step 2: Fee Register Scan</div>
+          <p style="font-size:.76rem;color:var(--sub);margin-bottom:.7rem;">Ask the principal for the fee ledger/register. Photograph each page — AI reads every student name and payment status live.</p>
+          <div id="ledger-caps">
+            <div class="cap-btn" id="lc-0" onclick="captureLedger(0)">
+              <div class="cap-icon">📖</div>
+              <div class="cap-lbl">📷 Camera  ·  🖼️ Gallery — Page 1</div>
+            </div>
+            <input type="file" accept="image/*" id="li-0" style="display:none">
+          </div>
+          <div id="ledger-actions" style="display:none;margin-top:.6rem;">
+            <button class="btn-p" id="btn-process" onclick="processAllLedgers()">🔍 Read All Pages with AI</button>
+            <div class="btn-row" style="margin-top:.45rem;">
+              <button class="btn-g btn-sm" id="btn-add-page" onclick="addLedgerPage()">+ Add Another Page</button>
+              <button class="btn-g btn-sm" onclick="skipLedger()">Skip</button>
+            </div>
+          </div>
+          <div id="ledger-skip-init" style="text-align:center;margin-top:.4rem;">
+            <button class="btn-g btn-sm" onclick="skipLedger()">Skip — no register available</button>
+          </div>
+        </div>
+
+        <div class="card" id="ledger-proc" style="display:none;">
+          <div class="ct">🔍 Reading Register...</div>
+          <div class="prog-bg"><div class="prog-fill" id="ledger-prog"></div></div>
+          <div class="proc-status" id="ledger-status">Initialising...</div>
+          <div class="live-feed" id="live-feed" style="margin-top:.5rem;display:none;">
+            <div id="live-content"></div>
+          </div>
+        </div>
+
+        <div id="ledger-results" style="display:none;">
+          <div class="card">
+            <div class="ct">✅ Students Found</div>
+            <div class="stat-grid">
+              <div class="stat-box"><div class="stat-n" id="as-total">0</div><div class="stat-l">Students</div></div>
+              <div class="stat-box"><div class="stat-n" id="as-classes">0</div><div class="stat-l">Classes</div></div>
+              <div class="stat-box"><div class="stat-n" id="as-conf" style="font-size:1.05rem;">—</div><div class="stat-l">Confidence</div></div>
+            </div>
+            <p style="font-size:.7rem;color:var(--sub);">Tap any name to correct it. Green = high confidence.</p>
+          </div>
+          <div id="ocr-debug" style="display:none;margin-top:.5rem;"></div>
+          <div id="class-groups"></div>
+          <div id="tier-auto-card"></div>
+        </div>
+
+        <div id="step2-nav" style="display:none;padding:0 1.25rem 1.5rem;">
+          <button class="btn-p" onclick="goStep(3)">Next: Show Principal →</button>
+          <button class="btn-g btn-sm" style="width:100%;margin-top:.4rem;" onclick="goStep(1)">← Back</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: Show Principal (Pitch) -->
+    <div id="sec-step3" class="step-screen">
+      <div style="padding:1.25rem;max-width:580px;margin:0 auto;padding-bottom:1.5rem;">
+        <div class="pitch-hero">
+          <div class="pitch-name" id="pitch-name">—</div>
+          <div class="pitch-loc" id="pitch-loc">—</div>
+          <div class="pitch-stats">
+            <div class="pitch-stat"><div class="p-stat-n" id="p-students">0</div><div class="p-stat-l">Students</div></div>
+            <div class="pitch-stat"><div class="p-stat-n" id="p-classes">0</div><div class="p-stat-l">Classes</div></div>
+            <div class="pitch-stat"><div class="p-stat-n" id="p-rate" style="font-size:1.1rem;">0%</div><div class="p-stat-l">Fees Paid</div></div>
+          </div>
+          <div class="pitch-ow">
+            <div class="pitch-ow-n" id="p-outstanding">₦0</div>
+            <div class="pitch-ow-l" id="p-owing-txt">outstanding fees</div>
+          </div>
+        </div>
+        <div id="pitch-bars"></div>
+        <div class="present-hint" style="margin-top:.65rem;">
+          <button class="btn-g" style="width:100%;" onclick="togglePresent()">⛶ Fullscreen — Turn to Principal</button>
+        </div>
+        <div class="present-nav" style="margin-top:.5rem;">
+          <button class="btn-p" onclick="goStep(4)">Continue: Review & Submit →</button>
+          <button class="btn-g btn-sm" style="width:100%;margin-top:.4rem;" onclick="goStep(2)">← Back</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: Review & Submit -->
+    <div id="sec-step4" class="step-screen">
+      <div class="content">
+        <div class="card"><div class="ct">📋 Review</div><div id="review-rows"></div></div>
+        <div class="card" id="tier-confirm-card" style="display:none;">
+          <div class="ct">💰 Pricing</div>
+          <div id="tier-confirm-inner"></div>
+        </div>
+        <div class="card">
+          <div class="ct">👤 Your Commission</div>
+          <div id="comm-preview" style="font-size:1.15rem;font-weight:800;color:var(--money);text-align:center;padding:.4rem;"></div>
+        </div>
+        <div class="fb" id="submit-fb"></div>
+        <button class="btn-money" id="btn-submit" onclick="submitDeal()">📤 Submit to Bayo's Portal</button>
+        <button class="btn-g btn-sm" style="width:100%;margin-top:.4rem;" onclick="goStep(3)">← Back</button>
+        <div class="spacer"></div>
+      </div>
+    </div>
+
+  </div><!-- /sec-wizard -->
+
+  <!-- DEALS SECTION -->
+  <div id="sec-deals" style="display:none;flex:1;overflow-y:auto;padding-bottom:60px;">
+    <div class="content">
       <div class="card">
-        <div class="card-title">📝 Submit a School Deal</div>
-        <p style="font-size:0.82rem;color:var(--sub);margin-bottom:1rem;">Fill in the school details. Bayo reviews and approves. You earn on approval.</p>
-
-        <!-- ═══ NEW: SIGNBOARD SCAN — auto-fills name/address/LGA/state ═══ -->
-        <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1.5px solid rgba(124,58,237,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
-          <div style="font-weight:800;font-size:0.85rem;color:#a78bfa;margin-bottom:0.4rem;">📸 Scan School Signboard</div>
-          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the school's signboard — AI reads the name, address, LGA and state automatically.</p>
-          <input type="file" id="signboard-input" accept="image/*" style="display:none;" onchange="scanSignboard(event)">
-          <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('signboard-input').click()">📷 Scan Signboard</button>
-          <div id="signboard-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
-        </div>
-
-        <label>School Name</label>
-        <input type="text" id="s-name" placeholder="e.g. Bright Stars Academy">
-        <label>Address</label>
-        <input type="text" id="s-address" placeholder="e.g. 12 Akin Street, Abeokuta">
-        <label>LGA</label>
-        <input type="text" id="s-lga" placeholder="e.g. Abeokuta South">
-        <label>State</label>
-        <input type="text" id="s-state" placeholder="e.g. Ogun" list="s-states-list">
-        <datalist id="s-states-list">
-          <option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option>
-          <option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option>
-          <option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>Gombe</option>
-          <option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option>
-          <option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option>
-          <option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option>
-          <option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option>
-          <option>Zamfara</option><option>FCT</option>
-        </datalist>
-        <label>Principal's WhatsApp</label>
-        <input type="tel" id="s-phone" placeholder="2348012345678">
-        <label>Principal's Email (optional)</label>
-        <input type="email" id="s-email" placeholder="principal@school.edu.ng">
-        <!-- ═══ AI PIPELINE STEP 1: SCAN REGISTER ═══ -->
-        <div id="ai-pipeline" style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(16,185,129,0.08));border:1.5px solid rgba(124,58,237,0.35);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
-
-          <!-- Step indicator -->
-          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
-            <div id="pipe-step-dot" style="width:9px;height:9px;background:#7c3aed;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px #7c3aed;"></div>
-            <div style="font-weight:800;font-size:0.85rem;color:#a78bfa;" id="pipe-step-label">STEP 1 — Scan the School Register</div>
-          </div>
-
-          <!-- State 0: Idle — big scan button -->
-          <div id="pipe-state-scan" style="">
-            <p style="font-size:0.78rem;color:var(--sub);margin-bottom:0.8rem;line-height:1.55;">Point your phone at the school register and tap Scan. The AI counts all students and fills everything in for you.</p>
-            <input type="file" id="register-csv" accept="*/*" multiple style="display:none;" onchange="handleRegisterCSV(event)">
-            <button class="btn-brand" onclick="document.getElementById('register-csv').click()"
-              style="width:100%;padding:0.85rem;font-size:0.95rem;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#059669);letter-spacing:0.5px;">
-              📸 SCAN REGISTER NOW
-            </button>
-            <p style="font-size:0.7rem;color:var(--sub);text-align:center;margin-top:0.5rem;">Also accepts: CSV, PDF, Excel, typed list</p>
-          </div>
-
-          <!-- State 1: Processing -->
-          <div id="pipe-state-processing" style="display:none;text-align:center;padding:1rem 0;">
-            <div id="csv-loading" style="color:#a78bfa;font-weight:700;font-size:0.88rem;margin-bottom:0.5rem;">📸 AI reading register...</div>
-            <div style="width:100%;height:4px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;">
-              <div id="pipe-progress-bar" style="height:100%;width:30%;background:linear-gradient(90deg,#7c3aed,#059669);border-radius:4px;transition:width 0.5s;"></div>
-            </div>
-          </div>
-
-          <!-- State 2: Counted — show result + confirm -->
-          <div id="pipe-state-result" style="display:none;">
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
-              <div style="text-align:center;background:rgba(16,185,129,0.15);border-radius:10px;padding:0.5rem 0.9rem;flex-shrink:0;">
-                <div style="font-size:1.8rem;font-weight:900;color:#34d399;font-family:monospace;" id="csv-student-count">0</div>
-                <div style="font-size:0.65rem;color:var(--sub);margin-top:2px;">STUDENTS</div>
-              </div>
-              <div style="flex:1;">
-                <div style="font-size:0.8rem;font-weight:700;color:var(--text);">Tier: <span id="csv-tier-name" style="color:#a78bfa;">—</span></div>
-                <div style="font-size:0.8rem;color:#34d399;">School pays: <strong id="csv-school-pays">₦0</strong>/term</div>
-                <div style="font-size:0.8rem;color:#fbbf24;">Your cut: <strong id="csv-your-comm">₦0</strong></div>
-              </div>
-            </div>
-            <div id="csv-name-preview" style="font-size:0.72rem;color:var(--sub);margin-bottom:0.6rem;line-height:1.7;max-height:80px;overflow:hidden;"></div>
-            <div id="csv-class-breakdown" style="font-size:0.71rem;color:var(--sub);margin-bottom:0.7rem;"></div>
-            <div style="display:flex;gap:0.5rem;">
-              <button class="btn-money" onclick="pipelineConfirmCount()"
-                style="flex:2;padding:0.6rem;font-size:0.85rem;font-weight:700;border-radius:10px;">
-                ✅ Confirm — Fill Form
-              </button>
-              <button class="btn-ghost" onclick="pipelineRescan()"
-                style="flex:1;padding:0.6rem;font-size:0.82rem;border-radius:10px;color:white;">
-                🔄 Rescan
-              </button>
-            </div>
-          </div>
-
-        </div>
-        <!-- ═══ END AI PIPELINE ═══ -->
-
-        <!-- ═══ NEW: FINANCIAL LEDGER SCAN (optional, separate from headcount above) ═══ -->
-        <div style="background:linear-gradient(135deg,rgba(37,99,235,0.1),rgba(16,185,129,0.06));border:1.5px solid rgba(37,99,235,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
-          <div style="font-weight:800;font-size:0.85rem;color:#60a5fa;margin-bottom:0.4rem;">📊 Optional: Scan Financial Ledger</div>
-          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the fee ledger to capture each student's balance, fees, and payment status — not just a headcount. Show this to the principal as proof you already have their data ready.</p>
-          <input type="file" id="ledger-financial-input" accept="image/*" style="display:none;" onchange="scanFinancialLedger(event)">
-          <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#2563eb,#059669);" onclick="document.getElementById('ledger-financial-input').click()">📷 Scan Fee Ledger Page</button>
-          <div id="ledger-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
-          <div id="ledger-financial-summary" style="display:none;margin-top:0.7rem;background:rgba(0,0,0,.2);border-radius:10px;padding:0.6rem;"></div>
-        </div>
-
-        <label>Number of Students (type or upload CSV above)</label>
-        <input type="number" id="s-count" placeholder="e.g. 85 — or upload CSV above to count automatically" oninput="autoTier()">
-        <label>Select Pricing Tier</label>
-        <div class="tiers">
-          <div class="tier" onclick="selectTier(this,10000,'Starter (1–50)',50)"><div class="tier-range">1–50 students</div><div class="tier-price">₦10,000</div><div class="tier-range">per term</div></div>
-          <div class="tier" onclick="selectTier(this,20000,'Small (51–100)',100)"><div class="tier-range">51–100 students</div><div class="tier-price">₦20,000</div><div class="tier-range">per term</div></div>
-          <div class="tier" onclick="selectTier(this,35000,'Medium (101–200)',200)"><div class="tier-range">101–200 students</div><div class="tier-price">₦35,000</div><div class="tier-range">per term</div></div>
-          <div class="tier" onclick="selectTier(this,55000,'Large (201–350)',350)"><div class="tier-range">201–350 students</div><div class="tier-price">₦55,000</div><div class="tier-range">per term</div></div>
-          <div class="tier" style="grid-column:1/-1;" onclick="selectTier(this,75000,'Enterprise (351+)',9999)"><div class="tier-range">351+ students</div><div class="tier-price">₦75,000</div><div class="tier-range">per term</div></div>
-        </div>
-        <div id="comm-box" class="comm-box" style="display:none;">
-          <div class="comm-lbl">Your Commission (20%)</div>
-          <div class="comm-amt" id="comm-amt">₦0</div>
-          <div class="comm-lbl" id="comm-total" style="margin-top:4px;"></div>
-          <div class="comm-lbl" style="margin-top:4px;color:#34d399;">+ 5% residual every renewal term</div>
-        </div>
-        <label>Number of Terms Paying</label>
-        <select id="s-terms" onchange="updateCommission()">
-          <option value="1">1 Term</option>
-          <option value="2">2 Terms</option>
-          <option value="3">3 Terms (Full Year)</option>
-        </select>
-        <label>Notes for Bayo (optional)</label>
-        <textarea id="s-notes" rows="2" placeholder="e.g. Met at NAPPS conference, very interested, has 80 students"></textarea>
-        <button id="show-principal-btn" class="btn-ghost" style="width:100%;margin-bottom:0.6rem;" onclick="openShowPrincipalPanel()">📱 Show Principal</button>
-        <button id="submit-btn" class="btn-brand" onclick="submitDeal()">📤 Submit to Bayo</button>
-        <div id="submit-fb" class="feedback"></div>
+        <div class="ct">📋 My Submitted Deals</div>
+        <div id="deals-list"><p style="color:var(--sub);font-size:.8rem;text-align:center;padding:1.5rem;">Loading...</p></div>
       </div>
-
-
-    </section>
-
-    <!-- MY DEALS -->
-    
-    <!-- MY DEALS -->
-        <!-- AI ONBOARDING AGENTS -->
-    <section id="sec-ai-agents" class="sec">
-      <div class="card" style="border-left:4px solid #818cf8;">
-        <div class="ct" style="margin-bottom:0.5rem;">🤖 AI Onboarding Assistants</div>
-        <p style="font-size:0.8rem;color:var(--sub);margin-bottom:1rem;line-height:1.55;">
-          4 AI agents to help you close schools faster and manage your pipeline.
-        </p>
-
-        <!-- Agent 1: School Scout -->
-        <div style="background:rgba(129,140,248,0.08);border:1px solid rgba(129,140,248,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
-          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
-            <div style="width:38px;height:38px;background:#7c3aed;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🔍</div>
-            <div><div style="font-weight:700;font-size:0.88rem;">School Scout AI</div><div style="font-size:0.72rem;color:var(--sub);">Finds schools in your area ready to onboard</div></div>
-          </div>
-          <div id="scout-map" style="width:100%;height:220px;border-radius:12px;overflow:hidden;margin-bottom:0.6rem;display:none;background:#0f0f1a;"></div>
-          <div id="scout-result" style="font-size:0.8rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
-          <button class="btn-brand btn-small" onclick="runScoutAI()" style="font-size:0.78rem;">📍 Scout My Area</button>
-        </div>
-
-        <!-- Agent 2: Pitch Coach -->
-        <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
-          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
-            <div style="width:38px;height:38px;background:#059669;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🎯</div>
-            <div><div style="font-weight:700;font-size:0.88rem;">Pitch Coach AI</div><div style="font-size:0.72rem;color:var(--sub);">Customise your sales pitch for any school type</div></div>
-          </div>
-          <select id="pitch-school-type" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
-            <option value="">Select school type…</option>
-            <option value="private primary">Private Primary School</option>
-            <option value="private secondary">Private Secondary (JSS/SSS)</option>
-            <option value="private nursery/primary">Nursery & Primary</option>
-            <option value="Islamic school">Islamic/Islamiyya School</option>
-            <option value="government primary">Government Primary School</option>
-          </select>
-          <div id="pitch-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
-          <button class="btn-brand btn-small" onclick="runPitchCoachAI()" style="font-size:0.78rem;background:#059669;">🎯 Generate Pitch</button>
-        </div>
-
-        <!-- Agent 3: Objection Handler -->
-        <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
-          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
-            <div style="width:38px;height:38px;background:#d97706;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🛡️</div>
-            <div><div style="font-weight:700;font-size:0.88rem;">Objection Handler AI</div><div style="font-size:0.72rem;color:var(--sub);">Smart responses to principal pushback</div></div>
-          </div>
-          <select id="objection-type" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
-            <option value="">Select objection…</option>
-            <option value="too expensive">It's too expensive</option>
-            <option value="we already use another system">We already use another system</option>
-            <option value="teachers won't use it">Teachers won't use it</option>
-            <option value="we need to think about it">We need to think about it</option>
-            <option value="internet is bad in our area">No reliable internet</option>
-            <option value="we are a small school">We're too small</option>
-          </select>
-          <div id="objection-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
-          <button class="btn-brand btn-small" onclick="runObjectionAI()" style="font-size:0.78rem;background:#d97706;">🛡️ Handle This</button>
-        </div>
-
-        <!-- Agent 4: Follow-up Writer -->
-        <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:1rem;margin-bottom:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
-            <div style="width:38px;height:38px;background:#dc2626;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">📲</div>
-            <div><div style="font-weight:700;font-size:0.88rem;">Follow-up Writer AI</div><div style="font-size:0.72rem;color:var(--sub);">WhatsApp messages that get replies from principals</div></div>
-          </div>
-          <select id="followup-scenario" style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;padding:0.4rem;">
-            <option value="">Select scenario…</option>
-            <option value="first visit, principal was interested">After first visit — they were interested</option>
-            <option value="first visit, principal was cold/busy">After first visit — they were cold/busy</option>
-            <option value="demo done, waiting for decision">Demo done, waiting for decision</option>
-            <option value="no response to last message">No response to last WhatsApp</option>
-            <option value="school is ready to sign up">School is ready — send payment link</option>
-          </select>
-          <div id="followup-result" style="font-size:0.79rem;color:var(--sub);min-height:40px;margin-bottom:0.6rem;line-height:1.6;white-space:pre-line;"></div>
-          <button class="btn-brand btn-small" onclick="runFollowupAI()" style="font-size:0.78rem;background:#dc2626;">📲 Write Message</button>
-        </div>
-
-        <p style="font-size:0.72rem;color:var(--sub);text-align:center;margin-top:0.5rem;">
-          💡 Add a Groq API key in <button onclick="goTab('settings')" style="background:none;border:none;color:#818cf8;cursor:pointer;font-size:0.72rem;text-decoration:underline;">Settings</button> for smarter AI responses
-        </p>
-      </div>
-    </section>
-
-<section id="sec-deals" class="sec">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-        <div style="font-size:1rem;font-weight:700;">My Submitted Deals</div>
-        <button class="btn-sm btn-ghost" onclick="renderDeals()">🔄 Refresh</button>
-      </div>
-      <div id="deals-list"></div>
-    </section>
-
-    <!-- EARNINGS -->
-    <section id="sec-earnings" class="sec">
-      <div class="stats">
-        <div class="stat"><div class="stat-n" id="earn-total">₦0</div><div class="stat-l">Total Earned</div></div>
-        <div class="stat"><div class="stat-n" id="earn-paid">₦0</div><div class="stat-l">Paid Out</div></div>
-      </div>
-      <div class="stat" style="margin-bottom:0.75rem;">
-        <div class="stat-n" id="earn-pending" style="color:var(--warn);">₦0</div>
-        <div class="stat-l">Pending Payment</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Commission History</div>
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>School ID</th><th>Amount</th><th>Status</th></tr></thead>
-            <tbody id="earn-body"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card" style="text-align:center;">
-        <div style="font-size:0.82rem;color:var(--sub);margin-bottom:0.75rem;">Questions about your commission?</div>
-        <a href="https://wa.me/2348145073941?text=Hello%20AariNAT%2C%20I%20have%20a%20question%20about%20my%20commission" target="_blank" style="text-decoration:none;">
-          <button class="btn-money">💬 Message AariNAT</button>
-        </a>
-      </div>
-    </section>
-    <section id="sec-settings" class="sec">
-  <div id="settings-content"></div>
-</section>
-
-  </main>
-
-  <nav class="nav">
-    <button class="nlink on" data-tab="submit" onclick="go('submit')"><span>📝</span>Submit</button>
-    <button class="nlink" data-tab="deals" onclick="go('deals')"><span>📋</span>My Deals</button>
-    <button class="nlink" data-tab="ai-agents" onclick="go('ai-agents')"><span>🤖</span>AI Assist</button>
-    <button class="nlink" data-tab="earnings" onclick="go('earnings')"><span>💰</span>Earnings</button>
-    <button class="nlink" data-tab="settings" onclick="go('settings')"><span>⚙️</span>Settings</button>
-  </nav>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js?v=20260719e"></script>
-  <script>
-    if('serviceWorker' in navigator){
-      window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
-    }
-  </script>
-
-
-  <!-- ═══ OCR OVERLAY (identical to school.edubloom.com.ng) ═══ -->
-  <div id="ocr-overlay" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(10,10,20,0.92);backdrop-filter:blur(6px);flex-direction:column;align-items:center;justify-content:center;padding:2rem;">
-  <div style="background:#1e1b4b;border:1.5px solid #4f46e5;border-radius:20px;padding:1.8rem 1.5rem;width:100%;max-width:360px;box-shadow:0 0 60px #4f46e540;">
-
-    <!-- Header -->
-    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.2rem;">
-      <div id="ocr-icon" style="font-size:2rem;line-height:1;">📸</div>
-      <div>
-        <div style="font-size:0.95rem;font-weight:800;color:#e0e7ff;">Reading Register</div>
-        <div id="ocr-filename" style="font-size:0.72rem;color:#818cf8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">No file selected</div>
-      </div>
-    </div>
-
-    <!-- Thumbnail preview -->
-    <div id="ocr-thumb-wrap" style="display:none;width:100%;height:120px;border-radius:12px;overflow:hidden;margin-bottom:1rem;background:#0f0f1a;border:1px solid #312e81;">
-      <img id="ocr-thumb" src="" alt="preview" style="width:100%;height:100%;object-fit:cover;">
-    </div>
-
-    <!-- Step indicators -->
-    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.2rem;">
-      <div id="ocr-step-load" style="display:flex;align-items:center;gap:0.6rem;font-size:0.8rem;color:#6366f1;">
-        <span id="ocr-step-load-icon" style="font-size:1rem;">⏳</span>
-        <span id="ocr-step-load-text">Loading image...</span>
-      </div>
-      <div id="ocr-step-upload" style="display:flex;align-items:center;gap:0.6rem;font-size:0.8rem;color:#94a3b8;">
-        <span id="ocr-step-upload-icon" style="font-size:1rem;">🔍</span>
-        <span id="ocr-step-upload-text">Scanning with AI...</span>
-      </div>
-      <div id="ocr-step-read" style="display:flex;align-items:center;gap:0.6rem;font-size:0.8rem;color:#94a3b8;">
-        <span id="ocr-step-read-icon" style="font-size:1rem;">🔍</span>
-        <span id="ocr-step-read-text">Reading names from image</span>
-      </div>
-      <div id="ocr-step-done" style="display:flex;align-items:center;gap:0.6rem;font-size:0.8rem;color:#94a3b8;">
-        <span id="ocr-step-done-icon" style="font-size:1rem;">✅</span>
-        <span id="ocr-step-done-text">Done</span>
-      </div>
-    </div>
-
-    <!-- Progress bar -->
-    <div style="background:#312e81;border-radius:99px;height:8px;overflow:hidden;margin-bottom:0.8rem;">
-      <div id="ocr-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:99px;transition:width 0.4s ease;"></div>
-    </div>
-
-    <!-- Status text -->
-    <div id="ocr-status" style="font-size:0.78rem;color:#c7d2fe;text-align:center;min-height:1.4em;">Preparing...</div>
-
-    <!-- Page counter (multi-page) -->
-    <div id="ocr-pages" style="font-size:0.7rem;color:#6366f1;text-align:center;margin-top:0.4rem;display:none;"></div>
-  </div>
-</div>
-
-  <!-- ═══ OCR REVIEW MODAL (identical to school.edubloom.com.ng) ═══ -->
-  <div id="ocr-review-modal" class="modal" style="z-index:8000;align-items:flex-start;overflow-y:auto;">
-  <div class="mbox" style="padding:1.2rem 1rem 2rem;">
-
-    <!-- Header -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-      <div style="font-size:1rem;font-weight:800;color:var(--text);">📋 Review Names</div>
-      <button onclick="closeM('ocr-review-modal')" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--sub);">✕</button>
-    </div>
-    <div id="ocr-review-info" style="font-size:0.78rem;color:var(--sub);margin-bottom:0.9rem;line-height:1.5;"></div>
-
-    <!-- Bulk class assign + select all row -->
-    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;">
-      <select id="ocr-class-all"
-        onchange="if(this.value==='__new__'){this.value='';const v=prompt('Enter class name:');if(v&&v.trim()){const cv=v.trim();const o=document.createElement('option');o.value=cv;o.textContent=cv;this.insertBefore(o,this.lastElementChild);this.value=cv;} }"
-        style="flex:1;padding:0.45rem 0.6rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.82rem;background:var(--bg);color:var(--text);font-family:inherit;">
-        <option value="">— Select class —</option>
-        <option value="__new__">➕ New class…</option>
-      </select>
-      <button onclick="ocrSetClassAll()" style="padding:0.45rem 0.8rem;border:1.5px solid var(--brand);border-radius:9px;font-size:0.78rem;background:var(--brand);color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Set →</button>
-      <div id="ocr-detected-class-note" style="display:none;width:100%;font-size:0.75rem;color:var(--brand);padding:0.3rem 0;font-style:italic;"></div>
-      <button onclick="ocrSelectAll(true)"  style="padding:0.45rem 0.7rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.78rem;background:var(--bg);color:var(--text);cursor:pointer;font-weight:700;">☑ All</button>
-      <button onclick="ocrSelectAll(false)" style="padding:0.45rem 0.7rem;border:1.5px solid var(--border);border-radius:9px;font-size:0.78rem;background:var(--bg);color:var(--text);cursor:pointer;font-weight:700;">☐ None</button>
-    </div>
-
-    <!-- Column headers -->
-    <div style="display:flex;gap:4px;padding:4px 4px 6px;border-bottom:2px solid var(--brand);font-size:0.7rem;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:0.04em;">
-      <span style="width:22px;flex-shrink:0;"></span>
-      <span style="flex:1;">Name</span>
-      <span style="width:88px;flex-shrink:0;">Class</span>
-      <span style="width:30px;flex-shrink:0;"></span>
-    </div>
-
-    <!-- Name list (populated by JS) -->
-    <div id="ocr-review-list" style="max-height:55vh;overflow-y:auto;"></div>
-
-    <!-- Footer -->
-    <div style="position:sticky;bottom:0;background:var(--bg);padding-top:0.8rem;margin-top:0.5rem;border-top:1px solid var(--border);">
-      <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
-        <button onclick="fixNamesInReview()" style="flex:1;padding:0.6rem;border:1.5px solid var(--brand);border-radius:9px;font-size:0.82rem;background:var(--bg);color:var(--brand);cursor:pointer;font-weight:700;">🔧 Fix Names</button>
-      </div>
-      <button id="ocr-confirm-btn" onclick="ocrConfirmImport()"
-        class="btn-brand" style="width:100%;padding:0.8rem;font-size:0.95rem;">
-        ✅ Add Students
-      </button>
     </div>
   </div>
-</div>
 
-
-<!-- SHOW PRINCIPAL — fullscreen panel, built from data already captured -->
-<!-- (school form fields + Smart Register Counter name list). Deliberately -->
-<!-- does NOT show outstanding-fees figures like v2's version — v1's OCR -->
-<!-- only extracts names, not payment status per student, so this panel -->
-<!-- only shows data that genuinely exists here: honest, not overpromising. -->
-<div id="show-principal-panel" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;padding:1.5rem 1.2rem;">
-  <button onclick="closeShowPrincipalPanel()" style="position:fixed;bottom:1rem;right:1rem;background:rgba(0,0,0,.85);color:var(--sub);border:1px solid var(--border);border-radius:8px;padding:6px 16px;font-size:0.75rem;z-index:10000;">✕ Exit</button>
-  <div style="max-width:480px;margin:0 auto;text-align:center;padding-top:1.5rem;">
-    <div style="font-size:2rem;margin-bottom:0.4rem;">🌸</div>
-    <h1 id="sp-school-name" style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;line-height:1.25;margin-bottom:0.3rem;"></h1>
-    <div id="sp-location" style="color:var(--sub);font-size:0.9rem;margin-bottom:1.3rem;"></div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:1.2rem;">
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 0.6rem;">
-        <div id="sp-count" style="font-size:1.8rem;font-weight:800;color:var(--brand);"></div>
-        <div style="font-size:0.72rem;color:var(--sub);">Students Ready</div>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 0.6rem;">
-        <div id="sp-class" style="font-size:1.1rem;font-weight:800;color:var(--text);"></div>
-        <div style="font-size:0.72rem;color:var(--sub);">Class Detected</div>
-      </div>
-    </div>
-
-    <div id="sp-financial-box" style="display:none;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.3);border-radius:var(--radius);padding:1rem;margin-bottom:1.2rem;">
-      <div id="sp-outstanding" style="font-size:1.6rem;font-weight:800;color:var(--danger);"></div>
-      <div id="sp-financial-sub" style="font-size:0.78rem;color:var(--sub);"></div>
-    </div>
-
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1.2rem;text-align:left;">
-      <div style="font-size:0.72rem;color:var(--sub);margin-bottom:4px;">Selected Plan</div>
-      <div id="sp-tier" style="font-size:1.15rem;font-weight:800;color:var(--money);"></div>
-    </div>
-
-    <div style="text-align:left;">
-      <div style="font-size:0.78rem;color:var(--sub);font-weight:700;margin-bottom:6px;">STUDENT NAMES ALREADY CAPTURED</div>
-      <div id="sp-names-list" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:0.8rem;max-height:40vh;overflow-y:auto;font-size:0.85rem;line-height:1.9;"></div>
-    </div>
-
-    <div style="margin-top:1.5rem;font-size:0.78rem;color:var(--sub);padding-bottom:2rem;">
-      No re-typing needed — this is ready to activate today.
-    </div>
+  <!-- Bottom Nav -->
+  <div class="bottom-nav">
+    <button class="nlink on" data-tab="wizard" onclick="goTab('wizard')">
+      <span class="nlink-ic">🏫</span>New School
+    </button>
+    <button class="nlink" data-tab="deals" onclick="goTab('deals')">
+      <span class="nlink-ic">📋</span>My Deals
+    </button>
+    <button class="nlink" onclick="logout()">
+      <span class="nlink-ic">🚪</span>Logout
+    </button>
   </div>
-</div>
 
+</div><!-- /app -->
 
-<div style="max-width:680px;margin:0 auto;padding:1.2rem 1rem 1.6rem;text-align:center;font-size:0.66rem;color:#64748b;">
-  <a href="https://edubloom.com.ng/privacy.html" target="_blank" style="color:#64748b;text-decoration:none;margin:0 5px;">Privacy Policy</a>·
-  <a href="https://edubloom.com.ng/terms.html" target="_blank" style="color:#64748b;text-decoration:none;margin:0 5px;">Terms of Use</a>·
-  <a href="https://edubloom.com.ng/data-compliance.html" target="_blank" style="color:#64748b;text-decoration:none;margin:0 5px;">Data &amp; Compliance</a>·
-  <a href="https://edubloom.com.ng/ip-policy.html" target="_blank" style="color:#64748b;text-decoration:none;margin:0 5px;">IP Policy</a>
-  <div style="margin-top:4px;">© 2026 AariNAT Company Limited</div>
-</div>
+<button id="present-exit" onclick="togglePresent()">✕ Exit</button>
 
+<script src="app.js?v=18"></script>
 </body>
 </html>
+
