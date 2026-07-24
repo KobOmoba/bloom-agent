@@ -35,6 +35,56 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-25 — Section 3 fixed: max_tokens was 1600, needed to be 4096 (real bug found)
+
+**Context:** The 2026-07-24 port below claimed to be "surgical code-for-code,"
+but a full function-by-function diff against `bloom-agent-v2`'s live code
+(not v2's README, which was itself stale) found it wasn't quite that.
+Verified against the 5 real ledger photos (`SCHOOL FEES LEDGER` pages —
+K-G, Nursery 1&2, Basic 1&2, Basic 3, Basic 4&5, 2026 Term 3) that v2 used
+to field-test its own prompt — the surname/firstname hint lists inside
+`LEDGER_FINANCIAL_PROMPT` are drawn directly from these same pages, so
+they're the right ground truth to check against.
+
+**Root cause found:** `groqLedgerFinancialOCR()` was calling Groq with
+`max_tokens: 1600`. V2's equivalent (`callGroqVision(..., 4096)`) uses
+4096 — confirmed by v2's own comment on `EXPECTED_PAGE_TOKENS=5000`
+("generous buffer above max_tokens(4096)"). At 1600, JSON output for a
+busy class page (the K-G ledger alone has 26 numbered rows; Nursery
+1&2 has 13 rows plus a Creche section) gets cut off mid-array and rows
+silently vanish. This is the exact truncation failure mode that was
+already fixed once (memory: "max_tokens truncation fixed, was 600") and
+came back at a smaller value during yesterday's port.
+
+**Fixed to match v2 exactly, function for function:**
+- `max_tokens: 1600 → 4096`
+- `reasoning_format: 'hidden' → reasoning_effort: 'none'` (v2's actual field-tested setting)
+- Removed the `_noJsonMode` strict-JSON-retry fallback and the extra
+  `resp.status === 529` check — neither exists in v2's `callGroqVision`;
+  per standing instruction, v1 mirrors v2 exactly rather than carrying
+  extra untested logic v2 doesn't have
+- `parseLedgerFinancialJSON()` — dropped the `<ildo>` tag-stripping regex
+  (not present in v2's `parseLedgerJSON`, same reasoning)
+- Deskew Hough-line thresholds in `compressLedgerForFinancialScan()`:
+  `0.20/0.15 → 0.25/0.20` of image width, matching v2's `tryDeskew()` exactly
+- Preprocessed-canvas JPEG quality: `0.92 → 0.97`, matching v2 exactly
+
+**Everything else audited and confirmed already identical to v2:**
+`LEDGER_FINANCIAL_PROMPT`/`LEDGER_FINANCIAL_READING_DISCIPLINE` text
+(byte-for-byte match, only the constant names differ), `tryPerspectiveCorrect()`,
+`computeBlurScoreLedger()` + threshold (60), `updateGroqRateState()`,
+`ledgerCooldown()`, `processOnePage()`, `mergePageIntoResults()`,
+`processAllLedgers()` — all logically identical to v2, differences were
+formatting/whitespace/comments only.
+
+**Not yet field-tested on a real device with a real ledger photo** —
+GitHub push confirmed successful, syntax-checked (`node --check`), but
+this still needs an actual phone test with David before being called done.
+
+**Commit:** pushed to `app.js` + `index.html` (cache bumped to `?v=20260725`)
+**Requested by:** Bayo. Implemented by Claude (Anthropic). Verified against
+Bayo-uploaded photos of the real ledger v2 was field-tested on.
+
 ### 2026-07-24 — V2 multi-page ledger pipeline merged into Section 3
 
 **What was done:** Surgical code-for-code port of `bloom-agent-v2`'s superior
