@@ -154,15 +154,69 @@
         </div>
         <!-- ═══ END AI PIPELINE ═══ -->
 
-        <!-- ═══ NEW: FINANCIAL LEDGER SCAN (optional, separate from headcount above) ═══ -->
+        <!-- ═══ FINANCIAL LEDGER SCAN — multi-page V2 pipeline ═══ -->
         <div style="background:linear-gradient(135deg,rgba(37,99,235,0.1),rgba(16,185,129,0.06));border:1.5px solid rgba(37,99,235,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
-          <div style="font-weight:800;font-size:0.85rem;color:#60a5fa;margin-bottom:0.4rem;">📊 Optional: Scan Financial Ledger</div>
-          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the fee ledger to capture each student's balance, fees, and payment status — not just a headcount. Show this to the principal as proof you already have their data ready.</p>
-          <input type="file" id="ledger-financial-input" accept="image/*" style="display:none;" onchange="scanFinancialLedger(event)">
-          <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#2563eb,#059669);" onclick="document.getElementById('ledger-financial-input').click()">📷 Scan Fee Ledger Page</button>
-          <div id="ledger-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
+          <div style="font-weight:800;font-size:0.85rem;color:#60a5fa;margin-bottom:0.4rem;">📊 Scan Financial Ledger</div>
+          <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph each page of the fee ledger. AI reads every student's balance, fees, and payment status. Add as many pages as needed — missed pages can be retried individually.</p>
+
+          <!-- Page capture slots — first slot always shown, more added dynamically -->
+          <div id="ledger-caps" style="margin-bottom:0.5rem;">
+            <!-- First page capture button (rendered by JS on load) -->
+          </div>
+
+          <!-- Add another page -->
+          <button class="btn-ghost" style="width:100%;font-size:0.78rem;padding:6px;margin-bottom:0.5rem;" onclick="addLedgerPage()">➕ Add Page</button>
+
+          <!-- Primary action — hidden until at least one page captured -->
+          <div id="ledger-actions" style="display:none;">
+            <button class="btn-brand" style="width:100%;background:linear-gradient(135deg,#2563eb,#059669);font-size:0.9rem;font-weight:800;padding:0.75rem;" onclick="processAllLedgers()">📖 Read All Pages</button>
+          </div>
+
+          <!-- Processing progress bar -->
+          <div id="ledger-proc" style="display:none;margin-top:0.75rem;">
+            <div style="font-size:0.76rem;color:var(--sub);margin-bottom:4px;" id="ledger-status">Starting...</div>
+            <div style="width:100%;height:5px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;">
+              <div id="ledger-prog" style="height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#059669);border-radius:4px;transition:width 0.4s;"></div>
+            </div>
+          </div>
+
+          <!-- Live feed — students appearing as each page is read -->
+          <div id="live-feed" style="display:none;margin-top:0.6rem;background:rgba(0,0,0,.25);border-radius:8px;padding:0.4rem 0.5rem;">
+            <div style="font-size:0.68rem;color:var(--sub);margin-bottom:4px;font-weight:700;">LIVE — READING NOW</div>
+            <div id="live-content" style="max-height:120px;overflow-y:auto;"></div>
+          </div>
+
+          <!-- Multi-page results panel -->
+          <div id="ledger-multipage-results" style="display:none;margin-top:0.75rem;">
+            <!-- Summary stats -->
+            <div style="display:flex;gap:6px;margin-bottom:0.5rem;">
+              <div style="flex:1;text-align:center;background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.25);border-radius:8px;padding:6px 4px;">
+                <div style="font-size:1.3rem;font-weight:900;color:#60a5fa;" id="as-total">0</div>
+                <div style="font-size:0.6rem;color:var(--sub);">STUDENTS</div>
+              </div>
+              <div style="flex:1;text-align:center;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:6px 4px;">
+                <div style="font-size:1.3rem;font-weight:900;color:#34d399;" id="as-classes">0</div>
+                <div style="font-size:0.6rem;color:var(--sub);">CLASSES</div>
+              </div>
+              <div style="flex:1;text-align:center;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:6px 4px;">
+                <div style="font-size:1.3rem;font-weight:900;color:#fbbf24;" id="as-conf">0%</div>
+                <div style="font-size:0.6rem;color:var(--sub);">CONFIDENCE</div>
+              </div>
+            </div>
+            <!-- Class-grouped student lists + failed-page warnings injected here by JS -->
+            <div id="class-groups"></div>
+            <!-- Reset button -->
+            <button class="btn-ghost" style="width:100%;font-size:0.76rem;padding:8px;margin-top:4px;color:var(--danger);" onclick="clearLedgerFinancialData()">🗑️ Clear &amp; Start Over</button>
+          </div>
+
+          <!-- V1 original single-page summary (kept for backwards compatibility) -->
           <div id="ledger-financial-summary" style="display:none;margin-top:0.7rem;background:rgba(0,0,0,.2);border-radius:10px;padding:0.6rem;"></div>
+
+          <!-- Hidden file input kept for V1 scanFinancialLedger compatibility -->
+          <input type="file" id="ledger-financial-input" accept="image/*" style="display:none;" onchange="scanFinancialLedger(event)">
+          <div id="ledger-scan-fb" style="display:none;font-size:0.76rem;color:var(--sub);margin-top:0.5rem;text-align:center;"></div>
         </div>
+        <!-- ═══ END FINANCIAL LEDGER SCAN ═══ -->
 
         <label>Number of Students (type or upload CSV above)</label>
         <input type="number" id="s-count" placeholder="e.g. 85 — or upload CSV above to count automatically" oninput="autoTier()">
@@ -329,7 +383,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js?v=20260719e"></script>
+<script src="app.js?v=20260724a"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
