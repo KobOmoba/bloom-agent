@@ -1799,7 +1799,7 @@ function compressLedgerForFinancialScan(dataURL) {
               try {
                 const edges = new cv.Mat(), lines = new cv.Mat();
                 cv.Canny(equalized, edges, 50, 150);
-                cv.HoughLinesP(edges, lines, 1, Math.PI / 180, Math.round(tmp.width * 0.20), Math.round(tmp.width * 0.15), 30);
+                cv.HoughLinesP(edges, lines, 1, Math.PI / 180, Math.round(tmp.width * 0.25), Math.round(tmp.width * 0.20), 30);
                 const angles = [];
                 for (let i = 0; i < lines.rows; i++) {
                   const x1=lines.intAt(i,0),y1=lines.intAt(i,1),x2=lines.intAt(i,2),y2=lines.intAt(i,3);
@@ -1823,7 +1823,7 @@ function compressLedgerForFinancialScan(dataURL) {
               const outCanvas = document.createElement('canvas');
               outCanvas.width = finalMat.cols; outCanvas.height = finalMat.rows;
               cv.imshow(outCanvas, finalMat);
-              preprocessed = outCanvas.toDataURL('image/jpeg', 0.92);
+              preprocessed = outCanvas.toDataURL('image/jpeg', 0.97);
               [src, gray, blurred, equalized].forEach(m => { try { m.delete(); } catch(e) {} });
               if (perspectiveCorrected) try { perspectiveCorrected.delete(); } catch(e) {}
               if (finalMat !== equalized) try { finalMat.delete(); } catch(e) {}
@@ -1873,7 +1873,7 @@ function compressLedgerForFinancialScan(dataURL) {
 
 // ── parseLedgerFinancialJSON (unchanged from V1 + V2 safety-net recovery) ──
 function parseLedgerFinancialJSON(text) {
-  text = text.replace(/<ildo>[\s\S]*?<\/ildo>/gi, '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   window._lastOCRRaw = text;
   let parsed = {};
   try { parsed = JSON.parse(text); }
@@ -1896,58 +1896,56 @@ function parseLedgerFinancialJSON(text) {
 }
 
 // ── groqLedgerFinancialOCR (unchanged from V1, + updateGroqRateState call) ─
-async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
+async function groqLedgerFinancialOCR(base64, mime, _retry) {
+  // ── Mirrors v2's callGroqVision(imgUrl, LEDGER_PROMPT, key, 4096) exactly.
+  // max_tokens=4096 (not 1600) — this is the field-tested budget; 1600 was
+  // silently truncating JSON output on busy pages (K-G/Nursery classes with
+  // 20+ students), which is why some pages were coming back with missing
+  // rows. Do not lower this again without re-testing against a full-class page.
   if (_retry === undefined) _retry = 0;
+  const maxTokens = 4096;
   const controller = new AbortController();
   const fetchTimer = setTimeout(() => controller.abort(), 45000);
   let resp;
-  const body = {
-    model: GROQ_OCR_MODEL,
-    messages: [{ role: 'user', content: [
-      { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
-      { type: 'text', text: LEDGER_FINANCIAL_PROMPT }
-    ]}],
-    temperature: 0,
-    max_tokens: 1600,
-    reasoning_format: 'hidden'
-  };
-  if (!_noJsonMode) body.response_format = { type: 'json_object' };
   try {
     resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       signal: controller.signal,
       headers: { 'Authorization': 'Bearer ' + getGroqKey(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        model: GROQ_OCR_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+          { type: 'text', text: LEDGER_FINANCIAL_PROMPT }
+        ]}],
+        temperature: 0,
+        max_tokens: maxTokens,
+        reasoning_effort: 'none',
+        response_format: { type: 'json_object' }
+      })
     });
     clearTimeout(fetchTimer);
-    updateGroqRateState(resp); // ← V2 addition: track token budget for adaptive cooldown
+    updateGroqRateState(resp);
   } catch (fetchErr) {
     clearTimeout(fetchTimer);
-    if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return groqLedgerFinancialOCR(base64, mime, _retry + 1, _noJsonMode); }
-    throw new Error('Connection issue — check your internet and try again.');
+    if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return groqLedgerFinancialOCR(base64, mime, _retry + 1); }
+    throw new Error(fetchErr.name === 'AbortError' ? 'Groq timed out' : fetchErr.message);
   }
-  if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
-    if (_retry >= 4) throw new Error('Groq is busy right now — wait about a minute and try this page again.');
-    const retryAfter = resp.headers.get('retry-after');
-    let waitMs = parseFloat(retryAfter) * 1000;
+  if (resp.status === 429 || resp.status === 503) {
+    const retryAfterHeader = resp.headers.get('retry-after');
+    let waitMs = parseFloat(retryAfterHeader) * 1000;
     if (!waitMs || isNaN(waitMs)) waitMs = 20000;
     waitMs = Math.min(Math.max(waitMs, 3000), 65000);
+    if (_retry >= 4) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq rate-limited after multiple retries'); }
+    console.warn('[Groq] rate-limited (attempt ' + (_retry + 1) + '), waiting ' + Math.round(waitMs / 1000) + 's per Retry-After');
     await new Promise(r => setTimeout(r, waitMs));
-    return groqLedgerFinancialOCR(base64, mime, _retry + 1, _noJsonMode);
+    return groqLedgerFinancialOCR(base64, mime, _retry + 1);
   }
-  if (!resp.ok) {
-    const e = await resp.json().catch(() => ({}));
-    const rawMsg = (e.error && e.error.message) || '';
-    if (!_noJsonMode && /valid.*json|failed_generation/i.test(rawMsg)) {
-      console.warn('[Ledger scan] Strict JSON mode rejected output, retrying leniently:', rawMsg);
-      return groqLedgerFinancialOCR(base64, mime, _retry, true);
-    }
-    console.warn('[Ledger scan] Groq error:', rawMsg || resp.status);
-    throw new Error('Could not read this page — try a clearer, straighter photo.');
-  }
+  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq ' + resp.status); }
   const data = await resp.json();
   let text = data.choices?.[0]?.message?.content || '';
-  text = text.replace(/<ildo>[\s\S]*?<\/ildo>/gi, '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  console.log('[Groq] ' + GROQ_OCR_MODEL + ' responded (' + text.length + ' chars, budget ' + maxTokens + ')');
   return parseLedgerFinancialJSON(text);
 }
 
