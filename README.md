@@ -35,6 +35,49 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-24 — V2 multi-page ledger pipeline merged into Section 3
+
+**What was done:** Surgical code-for-code port of `bloom-agent-v2`'s superior
+multi-page ledger pipeline into V1's Section 3 (Financial Ledger Scan).
+Section 1 (Signboard OCR) and Section 2 (Smart Register Counter) are
+**completely untouched** — zero changes to their code.
+
+**What was preserved from V1 (unchanged):**
+- `LEDGER_FINANCIAL_PROMPT` — field-tested prompt, 62% crop rule, UNCLEAR discipline
+- `tryPerspectiveCorrect()` — keystone/trapezoid correction
+- `computeBlurScoreLedger()` + `BLUR_VARIANCE_THRESHOLD_LEDGER` — blur detection
+- `compressLedgerForFinancialScan()` — CLAHE + deskew + contrast enhancement
+- `parseLedgerFinancialJSON()` — JSON parser + safety-net student recovery
+- `groqLedgerFinancialOCR()` — Groq call (now also calls `updateGroqRateState`)
+- `scanFinancialLedger()` — original single-page entry point (still works)
+- `renderLedgerFinancialSummary()` — V1 summary panel (still works)
+- `clearLedgerFinancialData()` — clear button (extended to also reset V2 state)
+
+**What was added from V2 (new, own area below V1 originals):**
+- `groqRateState` + `updateGroqRateState()` + `parseGroqDuration()` — tracks Groq
+  token budget live from response headers so cooldown is adaptive, not blind guessing
+- `callHFVision()` — HuggingFace Qwen2.5-VL-7B fallback provider
+- `callPaddleOCR()` — Oracle VPS PaddleOCR provider (dormant until ocrServiceUrl set in Firestore)
+- `buildLedgerCascade()` — PaddleOCR → Groq → HuggingFace cascade builder
+- `processOnePage()` — runs one page through full cascade with 30s timeout per provider
+- `mergePageIntoResults()` — deduplicates by name, normalises payment status, builds class groups
+- `calcLedgerConf()` + `addLiveLedgerItem()` — confidence scoring + live feed row
+- `ledgerCooldown()` — adaptive wait: short pause if healthy, exact Retry-After wait if budget low
+- `retryFailedPages()` — retries ONLY pages that failed, never re-scans good pages
+- `processAllLedgers()` — new multi-page entry point wired to "Read All Pages" button
+- `showLedgerMultiPageResults()` — class-grouped results with failed-page warning + retry button
+
+**New state variables (prefixed to avoid collision with V1 vars):**
+ledgerPageCount, ledgerImages, allLedgerStudents, ledgerClassGroups,
+ledgerFailedPages, ledgerDetectedClass/Term/Year
+
+**Key behaviour:** After processAllLedgers() completes, ledgerFinancialData
+is kept in sync so the existing Show Principal panel still reads real figures.
+
+**Commit:** 04938e345460c5af5c8b3259bbe9ce82e512dd18
+**Not yet field-tested on a real device.**
+**Requested by:** Bayo. Implemented by Sol (Base44 Superagent).
+
 ### 2026-07-19 — Added Signboard Scan (auto-fills name/address/LGA/state)
 - **Ported from `bloom-agent-v2`'s proven signboard pipeline** — direct
   Groq call, `qwen/qwen3.6-27b`, same working config. Signboard text is
