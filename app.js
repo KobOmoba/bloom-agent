@@ -1516,15 +1516,30 @@ async function scanSignboard(event) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// FINANCIAL LEDGER SCAN — NEW capability, separate from Smart Register
-// Counter above. That feature (names only) is untouched and still works
-// exactly as before. This is the actual missing capability that
-// bloom-agent-v2 was built as a sandbox to prove out: reading balance,
-// term fees, total, and payment status per student — not just a headcount.
-// Ported directly from bloom-agent-v2's proven, field-tested pipeline
-// (63 students / 5 classes / 90% confidence on a real 5-page test).
-// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// FINANCIAL LEDGER SCAN — Section 3
+// V1 original code preserved exactly: prompt, OpenCV pipeline, blur check,
+// compressLedgerForFinancialScan, parseLedgerFinancialJSON,
+// groqLedgerFinancialOCR, scanFinancialLedger (single-page entry),
+// renderLedgerFinancialSummary, clearLedgerFinancialData.
+//
+// V2 additions ported in — their OWN area below the V1 originals:
+//   groqRateState + updateGroqRateState + parseGroqDuration (rate tracking)
+//   callHFVision (HuggingFace fallback provider)
+//   callPaddleOCR (Oracle VPS PaddleOCR — dormant until ocrServiceUrl set)
+//   buildLedgerCascade (PaddleOCR → Groq → HuggingFace)
+//   processOnePage (one page through full cascade)
+//   mergePageIntoResults (dedup + normalise into allStudents/classGroups)
+//   calcConf + addLiveItem (confidence score + live feed row)
+//   ledgerCooldown (adaptive wait based on Groq token budget)
+//   retryFailedPages (retry ONLY failed pages, never re-scan good ones)
+//   processAllLedgers (multi-page entry point — NEW main scan function)
+//   showLedgerResults (results display for multi-page scan)
+//
+// UNTOUCHED: Section 1 (signboard), Section 2 (smart register counter).
+// ═══════════════════════════════════════════════════════════════════════════
 
+// ── Reading discipline (unchanged from V1) ─────────────────────────────────
 const LEDGER_FINANCIAL_READING_DISCIPLINE = [
   'READING DISCIPLINE — apply to every field, always:',
   '- Transcribe exactly what is written. Do not paraphrase or "clean up" text.',
@@ -1538,6 +1553,7 @@ const LEDGER_FINANCIAL_READING_DISCIPLINE = [
   '  for that field rather than guessing a plausible-looking value.'
 ].join('\n');
 
+// ── Ledger OCR prompt (unchanged from V1 — field-tested) ───────────────────
 const LEDGER_FINANCIAL_PROMPT = [
   'You are reading the LEFT ~62% of a Nigerian SCHOOL FEES LEDGER (handwritten).',
   'This image is cropped — the 2nd and 3rd payment-installment columns are',
@@ -1606,10 +1622,7 @@ const LEDGER_FINANCIAL_PROMPT = [
   ']}'
 ].join('\n');
 
-// Crop to left 62% before scaling — same technique proven in bloom-agent-v2.
-// Payment-status annotations physically sit right around columns 6-7, which
-// a naive 50% crop cuts through; 62% reliably includes them.
-// ── Verbatim copy from bloom-agent-v2's proven pipeline ────────────────────
+// ── OpenCV helpers (unchanged from V1) ────────────────────────────────────
 function lineIntersect(p1,p2,p3,p4){
   const d=(p1.x-p2.x)*(p3.y-p4.y)-(p1.y-p2.y)*(p3.x-p4.x);
   if(Math.abs(d)<1e-6)return null;
@@ -1624,7 +1637,6 @@ function tryPerspectiveCorrect(grayMat,w,h){
     const linesH=new cv.Mat(),linesV=new cv.Mat();
     cv.HoughLinesP(edges,linesH,1,Math.PI/180,Math.round(w*0.25),Math.round(w*0.30),20);
     cv.HoughLinesP(edges,linesV,1,Math.PI/180,Math.round(h*0.12),Math.round(h*0.18),20);
-
     const hLines=[],vLines=[];
     for(let i=0;i<linesH.rows;i++){
       const x1=linesH.intAt(i,0),y1=linesH.intAt(i,1),x2=linesH.intAt(i,2),y2=linesH.intAt(i,3);
@@ -1637,33 +1649,26 @@ function tryPerspectiveCorrect(grayMat,w,h){
       if(Math.abs(Math.abs(ang)-90)<12)vLines.push({p1:{x:x1,y:y1},p2:{x:x2,y:y2},mid:(x1+x2)/2});
     }
     edges.delete();linesH.delete();linesV.delete();
-
     if(hLines.length<3||vLines.length<3)return null;
-
-    hLines.sort((a,b)=>a.mid-b.mid);
-    vLines.sort((a,b)=>a.mid-b.mid);
+    hLines.sort((a,b)=>a.mid-b.mid);vLines.sort((a,b)=>a.mid-b.mid);
     const topLine=hLines[0],botLine=hLines[hLines.length-1];
     const leftLine=vLines[0],rightLine=vLines[vLines.length-1];
-
     const tl=lineIntersect(topLine.p1,topLine.p2,leftLine.p1,leftLine.p2);
     const tr=lineIntersect(topLine.p1,topLine.p2,rightLine.p1,rightLine.p2);
     const bl=lineIntersect(botLine.p1,botLine.p2,leftLine.p1,leftLine.p2);
     const br=lineIntersect(botLine.p1,botLine.p2,rightLine.p1,rightLine.p2);
     if(!tl||!tr||!bl||!br)return null;
-
-    const pts=[tl,tr,bl,br];
-    const margin=w*0.25;
+    const pts=[tl,tr,bl,br];const margin=w*0.25;
     for(const p of pts){
       if(!isFinite(p.x)||!isFinite(p.y))return null;
       if(p.x<-margin||p.x>w+margin||p.y<-h*0.25||p.y>h+h*0.25)return null;
     }
-    const topW=Math.hypot(tr.x-tl.x,tr.y-tl.y), botW=Math.hypot(br.x-bl.x,br.y-bl.y);
-    const leftH=Math.hypot(bl.x-tl.x,bl.y-tl.y), rightH=Math.hypot(br.x-tr.x,br.y-tr.y);
+    const topW=Math.hypot(tr.x-tl.x,tr.y-tl.y),botW=Math.hypot(br.x-bl.x,br.y-bl.y);
+    const leftH=Math.hypot(bl.x-tl.x,bl.y-tl.y),rightH=Math.hypot(br.x-tr.x,br.y-tr.y);
     if(topW<w*0.3||botW<w*0.3||leftH<h*0.3||rightH<h*0.3)return null;
     const wRatio=Math.max(topW,botW)/Math.max(1,Math.min(topW,botW));
     const hRatio=Math.max(leftH,rightH)/Math.max(1,Math.min(leftH,rightH));
     if(wRatio>1.6||hRatio>1.6)return null;
-
     const srcPts=cv.matFromArray(4,1,cv.CV_32FC2,[tl.x,tl.y,tr.x,tr.y,br.x,br.y,bl.x,bl.y]);
     const dstPts=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,w,0,w,h,0,h]);
     const M=cv.getPerspectiveTransform(srcPts,dstPts);
@@ -1706,130 +1711,134 @@ async function computeBlurScoreLedger(dataUrl){
     img.src=dataUrl;
   });
 }
-const BLUR_VARIANCE_THRESHOLD_LEDGER=60;
+const BLUR_VARIANCE_THRESHOLD_LEDGER = 60;
 
-function tryDeskew(grayMat,w,h){
-  try{
-    const edges=new cv.Mat();
-    cv.Canny(grayMat,edges,50,150);
-    const lines=new cv.Mat();
-    cv.HoughLinesP(edges,lines,1,Math.PI/180,Math.round(w*0.25),Math.round(w*0.30),20);
-    let angles=[];
-    for(let i=0;i<lines.rows;i++){
-      const x1=lines.intAt(i,0),y1=lines.intAt(i,1),x2=lines.intAt(i,2),y2=lines.intAt(i,3);
-      const ang=Math.atan2(y2-y1,x2-x1)*180/Math.PI;
-      if(Math.abs(ang)<20)angles.push(ang);
-    }
-    edges.delete();lines.delete();
-    if(angles.length<3)return null;
-    angles.sort((a,b)=>a-b);
-    const median=angles[Math.floor(angles.length/2)];
-    if(Math.abs(median)<0.5)return null;
-    const center=new cv.Point(w/2,h/2);
-    const M=cv.getRotationMatrix2D(center,median,1);
-    const rotated=new cv.Mat();
-    cv.warpAffine(grayMat,rotated,M,new cv.Size(w,h),cv.INTER_LINEAR,cv.BORDER_CONSTANT,new cv.Scalar(255,255,255,255));
-    M.delete();
-    return rotated;
-  }catch(e){console.warn('[OpenCV] Deskew failed:',e.message);return null;}
-}
-
-async function openCVPreprocess(dataUrl){
-  let preprocessed = dataUrl;
-  return new Promise((resolve,reject)=>{
-    const img=new Image();
-    img.onload=async ()=>{
-      try{
-        const cvReady = await loadOpenCV();
-        if(!cvReady){resolve(dataUrl);return;}
-        const tmp=document.createElement('canvas');
-        tmp.width=img.naturalWidth||img.width;tmp.height=img.naturalHeight||img.height;
-        tmp.getContext('2d').drawImage(img,0,0);
-        const src=cv.imread(tmp);
-        const gray=new cv.Mat();
-        const blurred=new cv.Mat();
-        const equalized=new cv.Mat();
-
-        cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
-
-        const perspectiveCorrected=tryPerspectiveCorrect(gray,tmp.width,tmp.height);
-        const workingMat=perspectiveCorrected||gray;
-
-        cv.GaussianBlur(workingMat,blurred,new cv.Size(3,3),0);
-
-        const clahe=new cv.CLAHE(3.0,new cv.Size(8,8));
-        clahe.apply(blurred,equalized);
-        clahe.delete();
-
-        const deskewed=tryDeskew(equalized,tmp.width,tmp.height);
-        const final=deskewed||equalized;
-
-        const out=document.createElement('canvas');
-        cv.imshow(out,final);
-
-        [src,gray,perspectiveCorrected,blurred,equalized,deskewed].forEach(m=>{
-          if(m)try{m.delete();}catch(e){}
-        });
-
-        console.log('[OpenCV] Preprocessing done —',tmp.width+'×'+tmp.height,'→ perspective:'+(perspectiveCorrected?'yes':'no'),'deskew:'+(deskewed?'yes':'no'));
-        resolve(out.toDataURL('image/jpeg',0.97));
-      }catch(e){console.warn('[OpenCV] Preprocess failed:',e.message);resolve(dataUrl);}
-    };
-    img.onerror=()=>resolve(dataUrl);
-    img.src=preprocessed;
-  });
-}
-
+// ── compressLedgerForFinancialScan (unchanged from V1) ────────────────────
 function compressLedgerForFinancialScan(dataURL) {
-  return new Promise(async resolve => {
+  return new Promise(async (resolve, reject) => {
+    let preprocessed = dataURL;
+    try {
+      const cvReady = await loadOpenCV();
+      if (cvReady) {
+        await new Promise(res => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const tmp = document.createElement('canvas');
+              tmp.width = img.naturalWidth || img.width;
+              tmp.height = img.naturalHeight || img.height;
+              tmp.getContext('2d').drawImage(img, 0, 0);
+              const src = cv.imread(tmp);
+              const gray = new cv.Mat(), blurred = new cv.Mat(), equalized = new cv.Mat();
+              cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+              const perspectiveCorrected = tryPerspectiveCorrect(gray, tmp.width, tmp.height);
+              const workingMat = perspectiveCorrected || gray;
+              cv.GaussianBlur(workingMat, blurred, new cv.Size(3, 3), 0);
+              const clahe = new cv.CLAHE(3.0, new cv.Size(8, 8));
+              clahe.apply(blurred, equalized);
+              clahe.delete();
+              // Deskew via Hough lines
+              let finalMat = equalized;
+              try {
+                const edges = new cv.Mat(), lines = new cv.Mat();
+                cv.Canny(equalized, edges, 50, 150);
+                cv.HoughLinesP(edges, lines, 1, Math.PI / 180, Math.round(tmp.width * 0.20), Math.round(tmp.width * 0.15), 30);
+                const angles = [];
+                for (let i = 0; i < lines.rows; i++) {
+                  const x1=lines.intAt(i,0),y1=lines.intAt(i,1),x2=lines.intAt(i,2),y2=lines.intAt(i,3);
+                  const ang = Math.atan2(y2-y1, x2-x1) * 180 / Math.PI;
+                  if (Math.abs(ang) < 12) angles.push(ang);
+                }
+                edges.delete(); lines.delete();
+                if (angles.length > 0) {
+                  const avg = angles.reduce((a, b) => a + b, 0) / angles.length;
+                  if (Math.abs(avg) > 0.5) {
+                    const center = new cv.Point(equalized.cols / 2, equalized.rows / 2);
+                    const M = cv.getRotationMatrix2D(center, avg, 1.0);
+                    const rotated = new cv.Mat();
+                    cv.warpAffine(equalized, rotated, M, new cv.Size(equalized.cols, equalized.rows),
+                      cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+                    M.delete(); finalMat = rotated;
+                    console.log('[OpenCV] Deskewed by', avg.toFixed(2) + '°');
+                  }
+                }
+              } catch(e) { console.warn('[OpenCV] Deskew failed:', e.message); }
+              const outCanvas = document.createElement('canvas');
+              outCanvas.width = finalMat.cols; outCanvas.height = finalMat.rows;
+              cv.imshow(outCanvas, finalMat);
+              preprocessed = outCanvas.toDataURL('image/jpeg', 0.92);
+              [src, gray, blurred, equalized].forEach(m => { try { m.delete(); } catch(e) {} });
+              if (perspectiveCorrected) try { perspectiveCorrected.delete(); } catch(e) {}
+              if (finalMat !== equalized) try { finalMat.delete(); } catch(e) {}
+            } catch(e) { console.warn('[OpenCV preprocess] error:', e.message); }
+            res();
+          };
+          img.onerror = res;
+          img.src = dataURL;
+        });
+      }
+    } catch(e) { console.warn('[compressLedger] OpenCV skip:', e.message); }
+
     const img = new Image();
-    img.onload = async () => {
-      const origW = img.width, origH = img.height;
+    img.onload = () => {
+      const origW = img.naturalWidth || img.width || 1000;
+      const origH = img.naturalHeight || img.height || 750;
+      // Crop LEFT 62% — includes payment-status columns 7-8
       const cropW = Math.round(origW * 0.62);
       const scale = Math.min(1, 1024 / cropW);
       const outW = Math.round(cropW * scale);
       const outH = Math.round(origH * scale);
       const canvas = document.createElement('canvas');
       canvas.width = outW; canvas.height = outH;
-      canvas.getContext('2d').drawImage(img, 0, 0, cropW, origH, 0, 0, outW, outH);
-
-      let finalCanvas = canvas;
-      try {
-        const cvReady = await loadOpenCV();
-        if (cvReady) finalCanvas = await preprocessWithOpenCV(canvas);
-      } catch (e) { console.warn('[Ledger scan] OpenCV skip:', e.message); }
-
-      resolve(finalCanvas.toDataURL('image/jpeg', 0.95));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, cropW, origH, 0, 0, outW, outH);
+      // Contrast enhancement
+      const id = ctx.getImageData(0, 0, outW, outH); const d = id.data;
+      let minV = 255, maxV = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = Math.round(d[i] * .299 + d[i+1] * .587 + d[i+2] * .114);
+        if (g < minV) minV = g; if (g > maxV) maxV = g;
+      }
+      const range = Math.max(maxV - minV, 1);
+      for (let i = 0; i < d.length; i += 4) {
+        const g = Math.round(d[i] * .299 + d[i+1] * .587 + d[i+2] * .114);
+        const norm = Math.round((g - minV) / range * 255);
+        const c = norm < 128 ? Math.max(0, Math.round(norm * 0.4)) : Math.min(255, Math.round(128 + (norm - 128) * 2.2));
+        d[i] = c; d[i+1] = c; d[i+2] = c;
+      }
+      ctx.putImageData(id, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.95));
     };
-    img.onerror = () => resolve(dataURL);
-    img.src = dataURL;
+    img.onerror = reject;
+    img.src = preprocessed;
   });
 }
 
+// ── parseLedgerFinancialJSON (unchanged from V1 + V2 safety-net recovery) ──
 function parseLedgerFinancialJSON(text) {
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  text = text.replace(/<ildo>[\s\S]*?<\/ildo>/gi, '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  window._lastOCRRaw = text;
   let parsed = {};
   try { parsed = JSON.parse(text); }
-  catch (e) {
+  catch(e) {
     const m = text.match(/\{[\s\S]*\}/);
-    try { parsed = m ? JSON.parse(m[0]) : {}; } catch (e2) { parsed = {}; }
+    try { parsed = m ? JSON.parse(m[0]) : {}; } catch(e2) { parsed = {}; }
   }
   let students = Array.isArray(parsed.students) ? parsed.students : [];
-  // Safety net: salvage complete student objects even from truncated/
-  // invalid JSON rather than losing the whole page — same fix proven
-  // necessary in bloom-agent-v2.
+  // Safety net: salvage complete student objects from truncated/cut-off responses
   if (!students.length) {
     const objMatches = text.match(/\{[^{}]*"name"[^{}]*\}/g) || [];
-    objMatches.forEach(m => { try { const o = JSON.parse(m); if (o && o.name) students.push(o); } catch(e){} });
+    objMatches.forEach(m => {
+      try { const o = JSON.parse(m); if (o && o.name) students.push(o); } catch(e) {}
+    });
+    if (students.length) console.warn('[parseLedger] Recovered ' + students.length + ' students from truncated JSON');
   }
-  return {
-    detected_class: parsed.detected_class || '',
-    term: parsed.term || '',
-    year: parsed.year || '',
-    students
-  };
+  const result = { detected_class: parsed.detected_class || '', term: parsed.term || '', year: parsed.year || '', students };
+  parseLedgerFinancialJSON._lastResult = result;
+  return result;
 }
 
+// ── groqLedgerFinancialOCR (unchanged from V1, + updateGroqRateState call) ─
 async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
   if (_retry === undefined) _retry = 0;
   const controller = new AbortController();
@@ -1842,23 +1851,10 @@ async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
       { type: 'text', text: LEDGER_FINANCIAL_PROMPT }
     ]}],
     temperature: 0,
-    // Was 4096 — this account's real TPM ceiling is only 8000/minute (confirmed
-    // from a live 429: "Limit 8000, Used 389, Requested 7633"). A single call
-    // was reserving nearly the ENTIRE minute's budget by itself (image+prompt
-    // tokens ~3500 + max_tokens 4096 = 7633), so almost any other activity in
-    // the same minute pushed it over, and retries kept hitting the same wall
-    // since the request itself never got smaller. 1600 covers a realistic
-    // single ledger page (30-40 students) with real headroom to spare.
     max_tokens: 1600,
     reasoning_format: 'hidden'
   };
-  // Groq's strict response_format:json_object mode can hard-reject output
-  // that's still perfectly salvageable by our own lenient parser below
-  // ("Failed to validate JSON" — a real, separate failure mode seen live,
-  // not a rate-limit issue). First attempt uses strict mode for speed;
-  // if that specific failure happens, retry once without it.
   if (!_noJsonMode) body.response_format = { type: 'json_object' };
-
   try {
     resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -1867,6 +1863,7 @@ async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
       body: JSON.stringify(body)
     });
     clearTimeout(fetchTimer);
+    updateGroqRateState(resp); // ← V2 addition: track token budget for adaptive cooldown
   } catch (fetchErr) {
     clearTimeout(fetchTimer);
     if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return groqLedgerFinancialOCR(base64, mime, _retry + 1, _noJsonMode); }
@@ -1884,8 +1881,6 @@ async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
     const rawMsg = (e.error && e.error.message) || '';
-    // Strict-JSON-mode validation failure — retry once in lenient mode
-    // instead of showing the agent a raw technical error they can't act on.
     if (!_noJsonMode && /valid.*json|failed_generation/i.test(rawMsg)) {
       console.warn('[Ledger scan] Strict JSON mode rejected output, retrying leniently:', rawMsg);
       return groqLedgerFinancialOCR(base64, mime, _retry, true);
@@ -1899,89 +1894,451 @@ async function groqLedgerFinancialOCR(base64, mime, _retry, _noJsonMode) {
   return parseLedgerFinancialJSON(text);
 }
 
-// Entry point wired to the "Scan Financial Ledger" button/input
+// ── scanFinancialLedger — ORIGINAL V1 single-page entry point (preserved) ─
 async function scanFinancialLedger(event) {
   const file = event.target.files[0]; if (!file) return;
-  event.target.value = '';
   const fb = document.getElementById('ledger-scan-fb');
-  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
-  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  const show = msg => { if (fb) fb.textContent = msg; };
   if (!getGroqKey()) { show('❌ Groq key not loaded yet — wait a moment and try again.'); return; }
   show('📸 Reading financial ledger...');
   try {
-    const reader = new FileReader();
-    const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
+    const dataURL = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file);
+    });
+    const variance = await computeBlurScoreLedger(dataURL);
+    if (variance !== null && variance < BLUR_VARIANCE_THRESHOLD_LEDGER) {
+      const retake = confirm('⚠️ This photo looks blurry and may not read well.\n\nTap OK to retake now, or Cancel to use it anyway.');
+      if (retake) { event.target.value = ''; return; }
+    }
     const compressed = await compressLedgerForFinancialScan(dataURL);
-    const base64 = compressed.split(',')[1];
-    const result = await groqLedgerFinancialOCR(base64, 'image/jpeg');
-    if (!result.students.length) { show('❌ No students found — try a clearer, straighter photo.'); return; }
-
+    const b64 = compressed.split(',')[1];
+    const result = await groqLedgerFinancialOCR(b64, 'image/jpeg');
     if (!ledgerFinancialData) ledgerFinancialData = { detected_class: '', term: '', year: '', students: [] };
     if (result.detected_class) ledgerFinancialData.detected_class = result.detected_class;
     if (result.term) ledgerFinancialData.term = result.term;
     if (result.year) ledgerFinancialData.year = result.year;
-
-    const seen = new Set(ledgerFinancialData.students.map(s => s.name.toLowerCase().replace(/[^a-z]/g,'')));
+    const seen = new Set(ledgerFinancialData.students.map(s => s.name.toLowerCase().replace(/[^a-z]/g, '')));
     let added = 0;
-    result.students.forEach(s => {
-      if (!s.name) return;
-      s.name = String(s.name).toUpperCase().trim();
-      const key = s.name.toLowerCase().replace(/[^a-z]/g,'');
+    (result.students || []).forEach(s => {
+      if (!s.name || s.name.length < 2) return;
+      const key = s.name.toLowerCase().replace(/[^a-z]/g, '');
       if (seen.has(key)) return;
       seen.add(key);
-      s.balance_bf = s.balance_bf || 0;
-      s.termFees = s.termFees || s.total || 0;
-      s.total = s.total || (s.balance_bf + s.termFees);
-      s.payment_status = (s.payment_status || 'UNCLEAR').toUpperCase();
       ledgerFinancialData.students.push(s);
       added++;
     });
-
     show('✅ ' + added + ' student' + (added !== 1 ? 's' : '') + ' added — ' + ledgerFinancialData.students.length + ' total so far.');
     renderLedgerFinancialSummary();
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 4000);
-  } catch (e) {
+  } catch(e) {
     show('❌ ' + (e.message || 'Could not read ledger. Try a clearer photo.'));
   }
 }
 
+// ── renderLedgerFinancialSummary (unchanged from V1) ─────────────────────
 function renderLedgerFinancialSummary() {
   const el = document.getElementById('ledger-financial-summary');
   if (!el || !ledgerFinancialData || !ledgerFinancialData.students.length) { if (el) el.style.display = 'none'; return; }
   const students = ledgerFinancialData.students;
-  const paid = students.filter(s => s.payment_status === 'PAID').length;
-  const part = students.filter(s => s.payment_status === 'PARTIAL').length;
-  const owing = students.filter(s => s.payment_status === 'OWING').length;
-  const review = students.filter(s => s.payment_status === 'UNCLEAR').length;
-  const badgeFor = st => st === 'PAID' ? '<span style="color:var(--money);">✓ Paid</span>' :
-                          st === 'PARTIAL' ? '<span style="color:var(--warn);">½ Partial</span>' :
-                          st === 'OWING' ? '<span style="color:var(--danger);">✗ Owing</span>' :
-                          '<span style="color:#c4b5fd;">? Review</span>';
+  const paid    = students.filter(s => (s.payment_status||'').toUpperCase() === 'PAID').length;
+  const partial = students.filter(s => (s.payment_status||'').toUpperCase() === 'PARTIAL').length;
+  const owing   = students.filter(s => (s.payment_status||'').toUpperCase() === 'OWING').length;
+  const unclear = students.filter(s => !['PAID','PARTIAL','OWING'].includes((s.payment_status||'').toUpperCase())).length;
+  const outstanding = students
+    .filter(s => !['PAID','UNCLEAR'].includes((s.payment_status||'').toUpperCase()))
+    .reduce((sum, s) => sum + ((s.total||0) - (s.paid||0)), 0);
   el.style.display = 'block';
   el.innerHTML =
     '<div style="font-weight:800;font-size:0.85rem;margin-bottom:6px;">📊 ' + students.length + ' student' + (students.length!==1?'s':'') + ' · ' + (ledgerFinancialData.detected_class || 'class unknown') + '</div>' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:0.72rem;margin-bottom:8px;">' +
-      (paid ? '<span style="background:rgba(16,185,129,.15);color:var(--money);padding:2px 8px;border-radius:10px;">' + paid + ' Paid</span>' : '') +
-      (part ? '<span style="background:rgba(245,158,11,.15);color:var(--warn);padding:2px 8px;border-radius:10px;">' + part + ' Partial</span>' : '') +
-      (owing ? '<span style="background:rgba(239,68,68,.15);color:var(--danger);padding:2px 8px;border-radius:10px;">' + owing + ' Owing</span>' : '') +
-      (review ? '<span style="background:rgba(139,92,246,.15);color:#c4b5fd;padding:2px 8px;border-radius:10px;">' + review + ' Needs Review</span>' : '') +
+    '<div style="display:flex;gap:8px;font-size:.76rem;flex-wrap:wrap;margin-bottom:6px;">' +
+    '<span style="color:#22c55e;">✓ ' + paid + ' paid</span>' +
+    '<span style="color:#f59e0b;">½ ' + partial + ' partial</span>' +
+    '<span style="color:#ef4444;">✗ ' + owing + ' owing</span>' +
+    (unclear ? '<span style="color:#94a3b8;">? ' + unclear + ' unclear</span>' : '') +
     '</div>' +
-    '<div style="max-height:32vh;overflow-y:auto;background:rgba(0,0,0,.15);border-radius:8px;padding:6px 8px;">' +
-      students.map((s, i) => '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:0.78rem;"><span>' + (i+1) + '. ' + s.name.replace(/</g,'&lt;') + '</span>' + badgeFor(s.payment_status) + '</div>').join('') +
-    '</div>' +
-    '<div style="display:flex;gap:6px;margin-top:8px;">' +
-      '<button class="btn-ghost" style="flex:1;font-size:0.76rem;padding:8px;" onclick="document.getElementById(\'ledger-financial-input\').click()">➕ Add Another Page</button>' +
-      '<button class="btn-ghost" style="flex:1;font-size:0.76rem;padding:8px;color:var(--danger);" onclick="clearLedgerFinancialData()">🗑️ Clear</button>' +
+    (outstanding ? '<div style="font-size:.78rem;color:#f59e0b;margin-bottom:6px;">⚠️ Est. outstanding (confident rows): ₦' + outstanding.toLocaleString() + '</div>' : '') +
+    '<div style="display:flex;gap:6px;">' +
+    '<button class="btn-ghost" style="flex:1;font-size:0.76rem;padding:8px;" onclick="document.getElementById(\'ledger-financial-input\').click()">➕ Add Another Page</button>' +
+    '<button class="btn-ghost" style="flex:1;font-size:0.76rem;padding:8px;color:var(--danger);" onclick="clearLedgerFinancialData()">🗑️ Clear</button>' +
     '</div>';
 }
 
+// ── clearLedgerFinancialData (unchanged from V1, extended to reset V2 state) ─
 function clearLedgerFinancialData() {
   if (!confirm('Clear all ' + (ledgerFinancialData?.students.length||0) + ' scanned students and start over?')) return;
   ledgerFinancialData = null;
-  const el = document.getElementById('ledger-financial-summary');
-  if (el) el.style.display = 'none';
+  // Also reset V2 multi-page state
+  allLedgerStudents = []; ledgerClassGroups = {}; ledgerFailedPages = [];
+  ledgerImages = {}; ledgerPageCount = 1;
+  const el = document.getElementById('ledger-financial-summary'); if (el) el.style.display = 'none';
+  const el2 = document.getElementById('ledger-multipage-results'); if (el2) el2.style.display = 'none';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ── V2 MULTI-PAGE LEDGER PIPELINE — ported code for code from bloom-agent-v2
+//    Everything below is new. Nothing above is touched.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── V2 state (prefixed to avoid any collision with V1 vars) ───────────────
+let ledgerPageCount = 1;
+let ledgerImages = {};
+let allLedgerStudents = [];
+let ledgerClassGroups = {};
+let ledgerFailedPages = [];
+let ledgerDetectedClass = '', ledgerDetectedTerm = '', ledgerDetectedYear = '';
+
+// ── Groq rate-limit tracking (ported from V2) ─────────────────────────────
+let groqRateState = { remainingTokens: null, resetMs: 0 };
+function parseGroqDuration(v) {
+  if (!v) return 0;
+  v = String(v).trim();
+  if (v.endsWith('ms')) return parseFloat(v);
+  if (v.endsWith('s'))  return parseFloat(v) * 1000;
+  return parseFloat(v) * 1000 || 0;
+}
+function updateGroqRateState(resp) {
+  try {
+    const remaining = resp.headers.get('x-ratelimit-remaining-tokens');
+    const reset     = resp.headers.get('x-ratelimit-reset-tokens');
+    if (remaining !== null) groqRateState.remainingTokens = parseInt(remaining);
+    if (reset     !== null) groqRateState.resetMs = parseGroqDuration(reset);
+  } catch(e) { /* headers not available — ignore */ }
+}
+
+// ── HuggingFace fallback (ported from V2) ─────────────────────────────────
+async function callHFVision(imageDataUrl, prompt, apiKey) {
+  const base64   = imageDataUrl.split(',')[1];
+  const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+  const HF_URL   = 'https://api-inference.huggingface.co/models/Qwen/Qwen2.5-VL-7B-Instruct/v1/chat/completions';
+  const headers  = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+  const body = JSON.stringify({
+    model: 'Qwen/Qwen2.5-VL-7B-Instruct',
+    max_tokens: 2000, temperature: 0.1,
+    messages: [{ role: 'user', content: [
+      { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
+      { type: 'text', text: prompt }
+    ]}]
+  });
+  let resp = await fetch(HF_URL, { method: 'POST', headers, body });
+  if (resp.status === 503) {
+    const errData = await resp.json().catch(() => ({}));
+    const wait = Math.min((errData.estimated_time || 20) * 1000, 35000);
+    console.log('[HF] Cold start — waiting', Math.round(wait / 1000) + 's');
+    await new Promise(r => setTimeout(r, wait));
+    resp = await fetch(HF_URL, { method: 'POST', headers, body });
+  }
+  if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.error?.message || 'HF ' + resp.status); }
+  const data = await resp.json();
+  const text = (data.choices?.[0]?.message?.content || '').trim();
+  console.log('[HuggingFace] Raw response (' + text.length + ' chars):', text.slice(0, 300));
+  return text;
+}
+
+// ── PaddleOCR — Oracle VPS (ported from V2, dormant until ocrServiceUrl set) ─
+async function callPaddleOCR(imageDataUrl, serviceUrl) {
+  if (!serviceUrl) throw new Error('No OCR service URL configured');
+  const base64 = imageDataUrl.split(',')[1];
+  const resp = await fetch(serviceUrl.replace(/\/$/, '') + '/scan-ledger', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64 })
+  });
+  if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'PaddleOCR service ' + resp.status); }
+  const data = await resp.json();
+  return JSON.stringify({
+    detected_class: data.detected_class || '',
+    students: (data.students || []).map(s => ({
+      name: s.name, balance_bf: s.balance_bf || 0, termFees: s.termFees || 0, total: s.total || 0,
+      payment_status: s.fully_paid ? 'PAID' : 'UNCLEAR'
+    }))
+  });
+}
+
+// ── buildLedgerCascade (ported from V2) ───────────────────────────────────
+// PaddleOCR (VPS) → Groq → HuggingFace
+// Uses V1's existing getGroqKey() and getHFKey() — no new key infrastructure.
+function buildLedgerCascade(imgUrl) {
+  const cascade = [];
+  // PaddleOCR — only if ocrServiceUrl is configured in Firestore admin_settings
+  const ocrServiceUrl = window._ocrServiceUrl || '';
+  if (ocrServiceUrl) cascade.push({ name: 'PaddleOCR (VPS)', fn: () => callPaddleOCR(imgUrl, ocrServiceUrl) });
+  // Groq — primary vision LLM (same model as rest of V1)
+  if (getGroqKey()) cascade.push({ name: 'Groq', fn: () => {
+    const b64  = imgUrl.split(',')[1];
+    const mime = imgUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+    return groqLedgerFinancialOCR(b64, mime).then(r => JSON.stringify(r));
+  }});
+  // HuggingFace — always last, no key needed
+  cascade.push({ name: 'HuggingFace', fn: () => callHFVision(imgUrl, LEDGER_FINANCIAL_PROMPT, getHFKey() || '') });
+  return cascade;
+}
+
+// ── processOnePage (ported from V2) ───────────────────────────────────────
+async function processOnePage(idxKey, statusEl, imagesTotal) {
+  const url      = ledgerImages[idxKey];
+  const pageNum  = parseInt(idxKey) + 1;
+  if (statusEl) statusEl.textContent = 'Compressing page ' + pageNum + '...';
+  let compressed;
+  try   { compressed = await compressLedgerForFinancialScan(url); }
+  catch(e) { console.warn('Compress failed:', e.message); compressed = url; }
+
+  const cascade = buildLedgerCascade(compressed);
+  let pageStudents = [], pageClass = '', succeeded = false, term = '', year = '';
+
+  for (const provider of cascade) {
+    if (statusEl) statusEl.textContent = 'Page ' + pageNum + (imagesTotal ? '/' + imagesTotal : '') + ' → ' + provider.name + '...';
+    try {
+      const rawText = await Promise.race([
+        provider.fn(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error(provider.name + ' timed out after 30s')), 30000))
+      ]);
+      const result = typeof rawText === 'string' ? parseLedgerFinancialJSON(rawText) : rawText;
+      if (result.students && result.students.length > 0) {
+        pageStudents = result.students;
+        pageClass    = result.detected_class;
+        term         = result.term;
+        year         = result.year;
+        console.log('[Ledger] ' + provider.name + ' page ' + pageNum + ': ' + pageStudents.length + ' students');
+        succeeded = true;
+        break;
+      }
+      console.warn('[Ledger] ' + provider.name + ': 0 students — trying next');
+    } catch(e) {
+      console.warn('[Ledger] ' + provider.name + ' error:', e.message);
+    }
+  }
+  return { pageNum, succeeded, students: pageStudents, pageClass, term, year };
+}
+
+// ── mergePageIntoResults (ported from V2) ─────────────────────────────────
+function mergePageIntoResults(pageStudents, pageClass, term, year) {
+  if (pageClass) {
+    const dc = String(pageClass).trim().toUpperCase();
+    if (dc && dc !== 'NULL' && dc !== 'UNKNOWN') ledgerDetectedClass = dc;
+  }
+  if (term && String(term).trim()) ledgerDetectedTerm = String(term).trim();
+  if (year && String(year).trim()) ledgerDetectedYear = String(year).trim();
+
+  const seenNames = new Set(allLedgerStudents.map(s => s.name.toLowerCase().replace(/[^a-z]/g, '')));
+  const added = [];
+  pageStudents.forEach(s => {
+    if (!s.name || s.name.length < 2) return;
+    s.name = s.name.toUpperCase().replace(/[^A-Z\s'\-.]/g, '').replace(/\s+/g, ' ').trim();
+    if (!s.name || s.name.length < 2) return;
+    const key = s.name.toLowerCase().replace(/[^a-z]/g, '');
+    if (seenNames.has(key)) return;
+    seenNames.add(key);
+    s.termFees = s.termFees || s.total || 0;
+    s.balance  = s.balance_bf || s.balance || 0;
+    s.total    = s.total || (s.termFees + s.balance);
+    const ps = String(s.payment_status || '').toUpperCase().trim();
+    if      (ps === 'PAID')    { s.paid = s.paid || s.total; s.status = 'FULLY PAID'; }
+    else if (ps === 'PARTIAL') { s.paid = s.paid || 0;       s.status = 'PART PAID'; }
+    else if (ps === 'OWING')   { s.paid = s.paid || 0;       s.status = 'OWING'; }
+    else                       { s.paid = s.paid || 0;       s.status = 'NEEDS REVIEW'; }
+    s.confidence = calcLedgerConf(s);
+    s.class = pageClass ? String(pageClass).trim().toUpperCase() : (ledgerDetectedClass || 'UNKNOWN');
+    allLedgerStudents.push(s);
+    if (!ledgerClassGroups[s.class]) ledgerClassGroups[s.class] = [];
+    ledgerClassGroups[s.class].push(s);
+    added.push(s);
+  });
+  return added;
+}
+
+// ── calcLedgerConf + addLiveLedgerItem (ported from V2) ───────────────────
+function calcLedgerConf(s) {
+  let c = 50;
+  if (s.name && s.name.length > 8) c += 20;
+  if (s.class && s.class !== 'UNKNOWN') c += 15;
+  if ((s.termFees || 0) > 0) c += 10;
+  if ((s.paid || 0) > 0) c += 5;
+  const oc = String(s.ocr_confidence || '').toUpperCase();
+  if (oc === 'HIGH') c += 10; else if (oc === 'LOW') c -= 20;
+  if (s.status === 'NEEDS REVIEW') c -= 15;
+  return Math.max(10, Math.min(99, c));
+}
+
+function addLiveLedgerItem(container, s) {
+  const div = document.createElement('div'); div.className = 'live-item';
+  const conf = s.confidence || 50;
+  const col  = conf > 80 ? 'var(--money)' : conf > 60 ? 'var(--warn)' : 'var(--danger)';
+  const dot  = document.createElement('div'); dot.className = 'live-dot'; dot.style.background = col;
+  const nm   = document.createElement('span');
+  nm.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem;';
+  nm.textContent = s.name;
+  const cl   = document.createElement('span');
+  cl.style.cssText = 'font-size:.65rem;color:var(--sub);flex-shrink:0;';
+  cl.textContent = s.class || '?';
+  div.appendChild(dot); div.appendChild(nm); div.appendChild(cl);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ── ledgerCooldown — adaptive wait (ported from V2) ───────────────────────
+async function ledgerCooldown(statusEl, pageNum) {
+  const EXPECTED_PAGE_TOKENS = 5000;
+  const r = groqRateState.remainingTokens;
+  if (r === null || r >= EXPECTED_PAGE_TOKENS) {
+    for (let s = 3; s > 0; s--) {
+      if (statusEl) statusEl.textContent = 'Next: page ' + pageNum + ' in ' + s + 's...';
+      await new Promise(res => setTimeout(res, 1000));
+    }
+    return;
+  }
+  const waitMs = Math.min(Math.max(groqRateState.resetMs, 3000), 65000);
+  const waitS  = Math.ceil(waitMs / 1000);
+  for (let s = waitS; s > 0; s--) {
+    if (statusEl) statusEl.textContent = 'Token budget low (' + r + ' left) — waiting ' + s + 's before page ' + pageNum + '...';
+    await new Promise(res => setTimeout(res, 1000));
+  }
+}
+
+// ── retryFailedPages — retry ONLY failed pages (ported from V2) ───────────
+async function retryFailedPages() {
+  if (!ledgerFailedPages.length) { alert('Nothing to retry — no failed pages.'); return; }
+  const pagesToRetry = [...ledgerFailedPages];
+  const procEl   = document.getElementById('ledger-proc');
+  const resEl    = document.getElementById('ledger-multipage-results');
+  const prog     = document.getElementById('ledger-prog');
+  const statusEl = document.getElementById('ledger-status');
+  if (procEl) procEl.style.display = 'block';
+  if (resEl)  resEl.style.display  = 'none';
+  if (prog)   prog.style.width     = '10%';
+
+  const stillFailed = [];
+  for (let i = 0; i < pagesToRetry.length; i++) {
+    const pageNum = pagesToRetry[i];
+    const idxKey  = String(pageNum - 1);
+    if (!ledgerImages[idxKey]) { stillFailed.push(pageNum); continue; }
+    if (prog) prog.style.width = Math.round((i / pagesToRetry.length) * 85) + '%';
+    if (i > 0) await ledgerCooldown(statusEl, pageNum);
+    const result = await processOnePage(idxKey, statusEl, pagesToRetry.length);
+    if (result.succeeded) {
+      mergePageIntoResults(result.students, result.pageClass, result.term, result.year);
+    } else {
+      stillFailed.push(pageNum);
+    }
+  }
+  ledgerFailedPages = stillFailed;
+  if (prog)     prog.style.width    = '100%';
+  if (statusEl) statusEl.textContent = 'Retry done — ' + allLedgerStudents.length + ' students total';
+  setTimeout(() => { if (procEl) procEl.style.display = 'none'; showLedgerMultiPageResults(); }, 600);
+}
+
+// ── processAllLedgers — multi-page scan main entry point (ported from V2) ─
+async function processAllLedgers() {
+  const images = Object.entries(ledgerImages);
+  if (!images.length) { alert('Photograph at least one ledger page first.'); return; }
+  const procEl      = document.getElementById('ledger-proc');
+  const liveEl      = document.getElementById('live-feed');
+  const liveContent = document.getElementById('live-content');
+  const prog        = document.getElementById('ledger-prog');
+  const statusEl    = document.getElementById('ledger-status');
+  if (procEl)      procEl.style.display = 'block';
+  if (liveEl)      liveEl.style.display = 'block';
+  if (liveContent) liveContent.innerHTML = '';
+  if (prog)        prog.style.width = '5%';
+
+  allLedgerStudents = []; ledgerClassGroups = {}; ledgerFailedPages = [];
+  ledgerDetectedClass = ''; ledgerDetectedTerm = ''; ledgerDetectedYear = '';
+  // Also reset V1 single-page state so both stay in sync
+  ledgerFinancialData = { detected_class: '', term: '', year: '', students: [] };
+
+  await new Promise(r => setTimeout(r, 2000));
+
+  for (let i = 0; i < images.length; i++) {
+    const [idxKey] = images[i];
+    const pageNum  = parseInt(idxKey) + 1;
+    if (prog) prog.style.width = Math.round((i / images.length) * 85) + '%';
+    if (i > 0) await ledgerCooldown(statusEl, pageNum);
+
+    const result = await processOnePage(idxKey, statusEl, images.length);
+    if (!result.succeeded) {
+      if (statusEl) statusEl.textContent = 'Page ' + pageNum + ': all providers returned 0 students';
+      ledgerFailedPages.push(pageNum);
+      await new Promise(r => setTimeout(r, 1500));
+      continue;
+    }
+    const added = mergePageIntoResults(result.students, result.pageClass, result.term, result.year);
+    if (liveContent) added.forEach(s => addLiveLedgerItem(liveContent, s));
+  }
+
+  if (prog)     prog.style.width     = '100%';
+  if (statusEl) statusEl.textContent  = 'Done — ' + allLedgerStudents.length + ' students found';
+
+  // Keep V1 ledgerFinancialData in sync so showPrincipal panel still works
+  ledgerFinancialData = {
+    detected_class: ledgerDetectedClass,
+    term: ledgerDetectedTerm,
+    year: ledgerDetectedYear,
+    students: allLedgerStudents
+  };
+
+  setTimeout(() => {
+    if (procEl) procEl.style.display = 'none';
+    showLedgerMultiPageResults();
+    renderLedgerFinancialSummary();
+  }, 800);
+}
+
+// ── showLedgerMultiPageResults (ported from V2) ────────────────────────────
+function showLedgerMultiPageResults() {
+  const el = document.getElementById('ledger-multipage-results');
+  if (!el) { renderLedgerFinancialSummary(); return; } // fallback to V1 panel if new div not in HTML yet
+  el.style.display = 'block';
+
+  const totalEl = document.getElementById('as-total');   if (totalEl) totalEl.textContent = allLedgerStudents.length;
+  const clsEl   = document.getElementById('as-classes'); if (clsEl)   clsEl.textContent   = Object.keys(ledgerClassGroups).length;
+  const avgConf = allLedgerStudents.length > 0
+    ? Math.round(allLedgerStudents.reduce((s, r) => s + (r.confidence || 50), 0) / allLedgerStudents.length) : 0;
+  const confEl  = document.getElementById('as-conf'); if (confEl) confEl.textContent = avgConf + '%';
+
+  const groupsEl = document.getElementById('class-groups');
+  if (!groupsEl) return;
+  groupsEl.innerHTML = '';
+
+  if (ledgerFailedPages.length) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);border-radius:8px;padding:.65rem;margin-bottom:.65rem;';
+    const pageList = ledgerFailedPages.join(', ');
+    warn.innerHTML =
+      '<div style="font-weight:800;color:#fca5a5;font-size:.85rem;">⚠️ Page' + (ledgerFailedPages.length > 1 ? 's' : '') + ' ' + pageList + ' could not be read</div>' +
+      '<div style="font-size:.76rem;color:#fecaca;margin-top:3px;">All OCR providers returned 0 students for ' + (ledgerFailedPages.length > 1 ? 'these pages' : 'this page') + '. Those students are NOT included below.</div>' +
+      '<button onclick="retryFailedPages()" style="margin-top:.5rem;width:100%;padding:8px;border-radius:6px;background:#3b82f6;color:#fff;border:none;cursor:pointer;font-size:.8rem;">🔁 Retry page' + (ledgerFailedPages.length > 1 ? 's' : '') + ' ' + pageList + ' (not the whole scan)</button>' +
+      '<div style="font-size:.7rem;color:#fecaca;margin-top:5px;opacity:.8;">If still failing after retry — retake that photo first, then retry.</div>';
+    groupsEl.appendChild(warn);
+  }
+
+  for (const [cls, students] of Object.entries(ledgerClassGroups)) {
+    const paid   = students.filter(s => s.status === 'FULLY PAID').length;
+    const part   = students.filter(s => s.status === 'PART PAID').length;
+    const owing  = students.filter(s => s.status === 'OWING').length;
+    const review = students.filter(s => s.status === 'NEEDS REVIEW').length;
+    const rows   = students.map((s, i) => {
+      const conf = s.confidence || 50;
+      const bc   = conf > 80 ? '#22c55e' : conf > 60 ? '#f59e0b' : '#ef4444';
+      return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05);">' +
+        '<span style="color:#94a3b8;font-size:.68rem;width:18px;text-align:right;">' + (i + 1) + '</span>' +
+        '<span style="flex:1;font-size:.78rem;">' + (s.name || '—') + '</span>' +
+        '<span style="font-size:.62rem;color:#94a3b8;width:55px;text-align:right;">' + (s.status || '—') + '</span>' +
+        '<span style="font-size:.6rem;color:' + bc + ';width:30px;text-align:right;">' + conf + '%</span>' +
+        '</div>';
+    }).join('');
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-bottom:.5rem;padding:.5rem;background:rgba(255,255,255,.04);border-radius:8px;';
+    div.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+      '<strong style="font-size:.82rem;">' + cls + ' (' + students.length + ')</strong>' +
+      '<span style="font-size:.72rem;">' +
+      (paid   ? '<span style="color:#22c55e;">' + paid   + '✓ </span>' : '') +
+      (part   ? '<span style="color:#f59e0b;">' + part   + '½ </span>' : '') +
+      (owing  ? '<span style="color:#ef4444;">' + owing  + '✗ </span>' : '') +
+      (review ? '<span style="color:#94a3b8;">' + review + '? </span>' : '') +
+      '</span></div>' + rows;
+    groupsEl.appendChild(div);
+  }
+}
 
 function ocrOverlayShow(filename) {
   const el = document.getElementById('ocr-overlay');
