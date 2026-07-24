@@ -186,6 +186,8 @@ function startApp(){
   $('agent-name-hdr').textContent=agent.name;
   SQ.ping();
   go('submit');
+  // Initialise first ledger page capture slot
+  _initLedgerUI();
   // Pull Groq key from admin_settings — survives browsing-data clears
   _fetchGroqKeyFromFirestore();
 }
@@ -211,7 +213,28 @@ async function _fetchGroqKeyFromFirestore() {
       localStorage.setItem(HF_KEY_STORAGE, d.hfApiKey);
       console.log('✅ HF key loaded via secure proxy');
     }
+    if (d.ocrServiceUrl) {
+      window._ocrServiceUrl = d.ocrServiceUrl;
+      console.log('✅ OCR service URL loaded');
+    }
   } catch(e) { /* offline — use whatever is in localStorage */ }
+}
+
+function _initLedgerUI(){
+  // Reset ledger state on each fresh login
+  ledgerPageCount=1; ledgerImages={};
+  allLedgerStudents=[]; ledgerClassGroups={}; ledgerFailedPages=[];
+  ledgerDetectedClass=''; ledgerDetectedTerm=''; ledgerDetectedYear='';
+  ledgerFinancialData=null;
+  // Clear any stale UI
+  const caps=document.getElementById('ledger-caps'); if(caps)caps.innerHTML='';
+  const actEl=document.getElementById('ledger-actions'); if(actEl)actEl.style.display='none';
+  const procEl=document.getElementById('ledger-proc'); if(procEl)procEl.style.display='none';
+  const liveEl=document.getElementById('live-feed'); if(liveEl)liveEl.style.display='none';
+  const resEl=document.getElementById('ledger-multipage-results'); if(resEl)resEl.style.display='none';
+  const sumEl=document.getElementById('ledger-financial-summary'); if(sumEl)sumEl.style.display='none';
+  // Add first page slot
+  addLedgerPage();
 }
 
 function logout(){ if(!confirm('Logout?'))return; localStorage.removeItem('ag_agent'); location.reload(); }
@@ -1516,6 +1539,40 @@ async function scanSignboard(event) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// ── Ledger UI helpers (needed by V2 multi-page pipeline) ─────────────────
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();r.onload=e=>resolve(e.target.result);r.onerror=reject;r.readAsDataURL(file);
+  });
+}
+
+function markCaptured(id,url){
+  const el=$(id);if(!el)return;
+  el.classList.add('captured');
+  [...el.children].forEach(c=>{if(c.tagName!=='INPUT')c.style.display='none';});
+  const img=document.createElement('img');
+  img.src=url;
+  img.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;opacity:.8;pointer-events:none;';
+  el.style.position='relative';
+  el.insertBefore(img,el.firstChild);
+  const rb=document.createElement('button');
+  rb.style.cssText='position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:6px;font-size:.7rem;padding:3px 8px;cursor:pointer;z-index:2;';
+  rb.textContent='↺ Retake';
+  rb.onclick=e=>{
+    e.stopPropagation();
+    el.classList.remove('captured');
+    [...el.children].forEach(c=>{if(c.tagName==='IMG'){c.remove();}else if(c!==rb){c.style.display='';}});
+    rb.remove();
+    // Remove stored image
+    const idxKey=id.replace('lc-','');
+    delete ledgerImages[idxKey];
+    const count=Object.keys(ledgerImages).length;
+    const actEl=document.getElementById('ledger-actions');
+    if(actEl&&count===0)actEl.style.display='none';
+  };
+  el.appendChild(rb);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FINANCIAL LEDGER SCAN — Section 3
 // V1 original code preserved exactly: prompt, OpenCV pipeline, blur check,
@@ -1985,6 +2042,47 @@ let allLedgerStudents = [];
 let ledgerClassGroups = {};
 let ledgerFailedPages = [];
 let ledgerDetectedClass = '', ledgerDetectedTerm = '', ledgerDetectedYear = '';
+
+// ── addLedgerPage + captureLedger (ported from V2) ────────────────────────
+function addLedgerPage(){
+  const idx = ledgerPageCount; ledgerPageCount++;
+  const container = document.getElementById('ledger-caps');
+  if (!container) return;
+  const wrap = document.createElement('div'); wrap.style.marginTop = '.4rem';
+  const btn = document.createElement('div');
+  btn.style.cssText = 'position:relative;border:2px dashed rgba(37,99,235,.4);border-radius:12px;padding:1rem;text-align:center;cursor:pointer;background:rgba(37,99,235,.06);min-height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;';
+  btn.id = 'lc-' + idx;
+  btn.onclick = () => captureLedger(idx);
+  const icon = document.createElement('div'); icon.style.fontSize = '1.4rem'; icon.textContent = '\u{1F4D6}';
+  const lbl  = document.createElement('div'); lbl.style.cssText = 'font-size:.75rem;color:var(--sub);'; lbl.textContent = '\u{1F4F7} Camera \u00b7 \u{1F5BC}\ufe0f Gallery \u2014 Page ' + idx;
+  btn.appendChild(icon); btn.appendChild(lbl);
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.id = 'li-' + idx; inp.style.display = 'none';
+  btn.appendChild(inp);
+  wrap.appendChild(btn);
+  container.appendChild(wrap);
+}
+
+function captureLedger(idx){
+  const input = document.getElementById('li-' + idx); if (!input) return;
+  input.onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    fileToDataUrl(file).then(async url => {
+      const variance = await computeBlurScoreLedger(url);
+      if (variance !== null && variance < BLUR_VARIANCE_THRESHOLD_LEDGER) {
+        const retake = confirm('This photo looks blurry. Retake?');
+        if (retake) { captureLedger(idx); return; }
+      }
+      ledgerImages[idx] = url;
+      markCaptured('lc-' + idx, url);
+      const actEl = document.getElementById('ledger-actions');
+      if (actEl) actEl.style.display = 'block';
+    });
+    input.value = '';
+  };
+  input.click();
+}
+
 
 // ── Groq rate-limit tracking (ported from V2) ─────────────────────────────
 let groqRateState = { remainingTokens: null, resetMs: 0 };
