@@ -223,7 +223,7 @@ async function _fetchGroqKeyFromFirestore() {
 function _initLedgerUI(){
   // Reset ledger state on each fresh login
   ledgerPageCount=1; ledgerImages={};
-  allLedgerStudents=[]; ledgerClassGroups={}; ledgerFailedPages=[];
+  allLedgerStudents=[]; ledgerClassGroups={}; ledgerFailedPages=[]; ledgerPageOrderMap={};
   ledgerDetectedClass=''; ledgerDetectedTerm=''; ledgerDetectedYear='';
   ledgerFinancialData=null;
   // Clear any stale UI
@@ -2039,6 +2039,7 @@ let ledgerImages = {};
 let allLedgerStudents = [];
 let ledgerClassGroups = {};
 let ledgerFailedPages = [];
+let ledgerPageOrderMap = {}; // displayNum (1-based, matches what the agent sees) -> idxKey (storage key, can have gaps after a retake)
 let ledgerDetectedClass = '', ledgerDetectedTerm = '', ledgerDetectedYear = '';
 
 // ── addLedgerPage + captureLedger (ported from V2) ────────────────────────
@@ -2170,9 +2171,9 @@ function buildLedgerCascade(imgUrl) {
 }
 
 // ── processOnePage (ported from V2) ───────────────────────────────────────
-async function processOnePage(idxKey, statusEl, imagesTotal) {
+async function processOnePage(idxKey, statusEl, imagesTotal, displayNum) {
   const url      = ledgerImages[idxKey];
-  const pageNum  = parseInt(idxKey) + 1;
+  const pageNum  = displayNum !== undefined ? displayNum : (parseInt(idxKey) + 1);
   if (statusEl) statusEl.textContent = 'Compressing page ' + pageNum + '...';
   let compressed;
   try   { compressed = await compressLedgerForFinancialScan(url); }
@@ -2305,11 +2306,11 @@ async function retryFailedPages() {
   const stillFailed = [];
   for (let i = 0; i < pagesToRetry.length; i++) {
     const pageNum = pagesToRetry[i];
-    const idxKey  = String(pageNum - 1);
+    const idxKey  = (ledgerPageOrderMap[pageNum] !== undefined) ? ledgerPageOrderMap[pageNum] : String(pageNum - 1);
     if (!ledgerImages[idxKey]) { stillFailed.push(pageNum); continue; }
     if (prog) prog.style.width = Math.round((i / pagesToRetry.length) * 85) + '%';
     if (i > 0) await ledgerCooldown(statusEl, pageNum);
-    const result = await processOnePage(idxKey, statusEl, pagesToRetry.length);
+    const result = await processOnePage(idxKey, statusEl, pagesToRetry.length, pageNum);
     if (result.succeeded) {
       mergePageIntoResults(result.students, result.pageClass, result.term, result.year);
     } else {
@@ -2336,7 +2337,7 @@ async function processAllLedgers() {
   if (liveContent) liveContent.innerHTML = '';
   if (prog)        prog.style.width = '5%';
 
-  allLedgerStudents = []; ledgerClassGroups = {}; ledgerFailedPages = [];
+  allLedgerStudents = []; ledgerClassGroups = {}; ledgerFailedPages = []; ledgerPageOrderMap = {};
   ledgerDetectedClass = ''; ledgerDetectedTerm = ''; ledgerDetectedYear = '';
   // Also reset V1 single-page state so both stay in sync
   ledgerFinancialData = { detected_class: '', term: '', year: '', students: [] };
@@ -2345,11 +2346,12 @@ async function processAllLedgers() {
 
   for (let i = 0; i < images.length; i++) {
     const [idxKey] = images[i];
-    const pageNum  = parseInt(idxKey) + 1;
+    const pageNum  = i + 1; // ordinal position the agent actually sees, not the storage key
+    ledgerPageOrderMap[pageNum] = idxKey;
     if (prog) prog.style.width = Math.round((i / images.length) * 85) + '%';
     if (i > 0) await ledgerCooldown(statusEl, pageNum);
 
-    const result = await processOnePage(idxKey, statusEl, images.length);
+    const result = await processOnePage(idxKey, statusEl, images.length, pageNum);
     if (!result.succeeded) {
       if (statusEl) statusEl.textContent = 'Page ' + pageNum + ': all providers returned 0 students';
       ledgerFailedPages.push(pageNum);
