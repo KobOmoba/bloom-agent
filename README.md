@@ -35,6 +35,47 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-25 (2) — Section 3: fixed "Page 6/5" display bug + unsafe retry mapping
+
+**Reported by Bayo** (from David's field test, real device, screenshot showing
+"Page 6/5 → Groq..." while only 5 pages were loaded, and content matching an
+earlier page). First reported as "all 3 scan buttons not clicking" — turned
+out the buttons were fine, just slow on first tap (normal, waiting on Groq);
+the real issue was the page counter.
+
+**Root cause:** `ledgerImages` slots are keyed by an ever-incrementing
+allocation counter (`ledgerPageCount`), never by ordinal position. The old
+`pageNum = parseInt(idxKey) + 1` formula assumed keys were always contiguous
+`0..N-1`. If a page slot gets retaken/deleted anywhere in the sequence, its
+key vanishes but the counter never resets — so 5 remaining photos can end up
+keyed `1,2,3,4,5` instead of `0,1,2,3,4`, and the display reads `2..6` instead
+of `1..5`. This is a **pre-existing bug in v2 too** (identical
+`pageNum = parseInt(idxKey) + 1` logic there) — not something introduced by
+yesterday's port. Not fixed there yet; flag to Bayo before touching v2.
+
+**Real (not just cosmetic) part of the bug:** `retryFailedPages()` reversed
+the same broken formula (`idxKey = pageNum - 1`) to refetch a failed photo.
+With gapped keys, a retry could silently pull the **wrong photo** — a real
+data-integrity risk, not just a display glitch.
+
+**Fix:**
+- Added `ledgerPageOrderMap` — built fresh each scan, maps the ordinal
+  position the agent actually sees (`1, 2, 3...`) to the real storage key.
+- `processOnePage()` now takes an explicit `displayNum` param for all status
+  text and the returned `pageNum`, instead of deriving it from the storage key.
+- `processAllLedgers()` passes the true loop position (`i+1`) as `displayNum`
+  and records it in the order map.
+- `retryFailedPages()` now resolves the storage key via the order map first,
+  falling back to the old `pageNum-1` arithmetic only if the map is somehow
+  empty (shouldn't happen in normal use, but safe).
+- Reset points for ledger state (fresh login, new scan) now also reset
+  `ledgerPageOrderMap`.
+
+**Commit:** pushed to `app.js` (cache bumped to `?v=20260725-2`).
+**Not yet re-verified on device** — needs another real test with David,
+specifically: add a page, retake an earlier one, scan, and check the page
+counter reads `1..N` cleanly with no gaps.
+
 ### 2026-07-25 — Section 3 fixed: max_tokens was 1600, needed to be 4096 (real bug found)
 
 **Context:** The 2026-07-24 port below claimed to be "surgical code-for-code,"
