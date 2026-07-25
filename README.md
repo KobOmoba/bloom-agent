@@ -35,6 +35,38 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-25 (3) — EMERGENCY: app.js was overwritten with School-Bloom's code, restored
+
+**What happened:** a commit landed on this repo (`app.js` +7088/-2792,
+`index.html` +1440/-391, from Bayo's own GitHub account) titled "Remove all
+premium test bypasses — premium gate fully functional." The content pushed
+was School-Bloom's code, not bloom-agent's — function names were all
+School Portal features (`_groqScoreOCR`, `socrHandleImage`,
+`_callGroqFeeVision`, fee/score OCR, Add Staff), and `index.html`'s
+`<title>` read "Educational Bloom · School Portal." Almost certainly a
+wrong-repo push during premium-gating work meant for School-Bloom.
+
+**Impact:** `agent.edubloom.com.ng` was completely broken — none of the
+agent-onboarding functions existed in the file anymore, so login,
+submitDeal, signboard scan, register scan, and ledger scan were all
+unreachable. Caught before I built anything on top of it, purely because
+of the standing habit of pulling fresh before editing rather than trusting
+a locally cached copy.
+
+**Fix:** restored `app.js` and `index.html` to the exact content from the
+last known-good commit (`dd21e5f577` — the page-numbering fix from
+earlier today), fetched directly from GitHub's commit history rather than
+a local cache, so the restore is verifiably byte-for-byte correct.
+
+**Not lost:** the premium-gate commit is still fully intact in git history
+at `2c5d738193` on this repo. If that work was meant for School-Bloom, it
+can be recovered from there and pushed to the correct repo instead of
+being redone from scratch.
+
+**Verify:** open agent.edubloom.com.ng, confirm the title bar says "Agent"
+not "School Portal," and that login/submit still work. GitHub Pages can
+take a minute or two to redeploy after a push.
+
 ### 2026-07-25 (2) — Section 3: fixed "Page 6/5" display bug + unsafe retry mapping
 
 **Reported by Bayo** (from David's field test, real device, screenshot showing
