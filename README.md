@@ -275,3 +275,17 @@ is kept in sync so the existing Show Principal panel still reads real figures.
 *Maintained by Claude (Anthropic). Started 2026-07-19.*
 
 
+
+## 2026-07-25 — Premium Gate Restoration
+
+### What changed
+- Removed ALL premium test bypasses from production code.
+- `openM()`: Now checks `_isPremium()` — non-premium users see upgrade nudge, not scan button.
+- `loadSettings()`: Subject scan button gated by `_isPremium()`.
+- `index.html`: All 4 premium-scan elements set to `display:none` (JS toggles based on plan).
+- Cache-busting: ?v=20260725c
+
+### Premium gate behavior (production)
+- **Premium users**: Scan buttons visible, scanning works normally.
+- **Free users**: Upgrade nudge visible instead of scan button, toast on scan attempt.
+- **Demo mode**: Treated as premium (scan buttons visible, no real data saved).
