@@ -1,5 +1,5 @@
 // EduBloom — School Portal Service Worker
-const CACHE_NAME   = 'edubloom-portal-v8';
+const CACHE_NAME   = 'edubloom-agent-v9';
 const SHELL_ASSETS = [
   './',
   './index.html',
