@@ -1,12 +1,12 @@
 {
-  "name": "Bloom Agent \u2014 EduBloom",
-  "short_name": "Bloom Agent",
-  "description": "AariNAT Educational Bloom Field Agent App",
+  "name": "EduBloom School Portal",
+  "short_name": "EduBLOOM",
+  "description": "EduBloom School Management Portal by AariNAT",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#7c3aed",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
   "orientation": "portrait",
   "icons": [
     {

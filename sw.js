@@ -1,5 +1,5 @@
-// EduBloom — Bloom Agent Service Worker
-const CACHE_NAME   = 'edubloom-agent-v7';
+// EduBloom — School Portal Service Worker
+const CACHE_NAME   = 'edubloom-portal-v8';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -99,4 +99,4 @@ self.addEventListener('fetch', event => {
   );
 });
 
-console.log('[SW] EduBloom Bloom Agent Service Worker loaded ✅');
+console.log('[SW] EduBloom School Portal Service Worker loaded ✅');
