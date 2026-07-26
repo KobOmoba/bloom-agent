@@ -35,6 +35,38 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-25 (5) — Base44 OCR key-fetch dependency removed entirely
+
+**Part of Bayo's "fix all" security pass** (see bloom-portal's README for
+the fuller picture — Firestore rules lockdown, real Firebase Auth).
+
+**Removed:** `_fetchGroqKeyFromFirestore()` no longer calls
+`https://superagent-626f0107.base44.app/functions/getEduBloomKeys`. That
+was the last live Base44 dependency in this app (the login-adjacent one
+was in bloom-portal, already reverted separately).
+
+**Replaced with:** a direct Firestore read of `public_ocr_keys/main` — a
+new document in the portal's project holding only `groqApiKey`,
+`hfApiKey`, and `ocrServiceUrl`. Nothing sensitive lives there (no admin
+password, no WhatsApp template), so it's safe for this to stay
+world-readable while `admin_settings` itself stays locked to Bayo's
+account. The portal mirrors these three fields into it via
+`syncOcrKeysToPublic()` whenever a key changes.
+
+**Why this matters beyond just removing a dependency:** the old proxy was
+a single point of failure this app didn't control — if that Base44
+endpoint had gone down or changed shape, every agent's OCR pipeline stops
+working with no warning. Now it's a plain Firestore read against
+Bayo's own project, same reliability characteristics as everything else
+this app already depends on.
+
+**Commit:** `app.js` (function rewritten), `index.html` (cache bumped to
+`?v=20260725-nobase44`). **Depends on:** the portal having actually run
+`syncOcrKeysToPublic()` at least once — if `public_ocr_keys/main` doesn't
+exist yet, this read just no-ops and falls back to whatever's cached in
+localStorage from before, same graceful-degradation behavior as the old
+code had.
+
 ### 2026-07-25 (4) — Dark theme fully restored: same systemic issue as the (3) entry below, different files
 
 **Reported by Bayo:** app was showing a light pastel theme instead of the
