@@ -193,25 +193,23 @@ function startApp(){
 }
 
 async function _fetchGroqKeyFromFirestore() {
+  // Reads directly from Firestore now — no external proxy. public_ocr_keys/main
+  // holds ONLY the OCR keys (never the admin password or anything sensitive),
+  // mirrored there by the portal whenever Bayo updates a key in Settings.
   try {
-    const phone = (agent && agent.phone) || '';
-    if (!phone) return;
-    const res = await fetch('https://superagent-626f0107.base44.app/functions/getEduBloomKeys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'agent', id: phone })
-    });
-    if (!res.ok) return; // fall back to whatever's cached in localStorage
-    const d = await res.json();
+    if (!db) return;
+    const doc = await db.collection('public_ocr_keys').doc('main').get();
+    if (!doc.exists) return; // fall back to whatever's cached in localStorage
+    const d = doc.data();
     if (d.groqApiKey) {
       window.GROQ_API_KEY = d.groqApiKey;
       localStorage.setItem(GROQ_KEY_STORAGE, d.groqApiKey);
-      console.log('✅ Groq key loaded via secure proxy');
+      console.log('✅ Groq key loaded from Firestore');
     }
     if (d.hfApiKey) {
       window.HF_API_KEY = d.hfApiKey;
       localStorage.setItem(HF_KEY_STORAGE, d.hfApiKey);
-      console.log('✅ HF key loaded via secure proxy');
+      console.log('✅ HF key loaded from Firestore');
     }
     if (d.ocrServiceUrl) {
       window._ocrServiceUrl = d.ocrServiceUrl;
