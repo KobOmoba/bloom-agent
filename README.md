@@ -35,6 +35,82 @@ cross-pollination between the two codebases.
 
 ## 📜 Change History (newest first)
 
+### 2026-07-25 (4) — Dark theme fully restored: same systemic issue as the (3) entry below, different files
+
+**Reported by Bayo:** app was showing a light pastel theme instead of the
+original dark navy one. Initially misdiagnosed twice before getting this
+right — worth recording the wrong turns too, so the next session doesn't
+repeat them:
+- First guess: stale service-worker cache. Wrong — bumping the cache
+  version didn't fix it, and incognito (zero prior cache) showed the same
+  broken result, which should have ruled this out immediately.
+- Second guess: Android's "Force Dark" auto-inverting an undeclared-theme
+  page. Also wrong, and based on not having actually re-read this repo's
+  own `style.css` — was recalling `bloom-portal`'s dark colors from memory
+  and assuming they applied here too. A `color-scheme: dark` meta was
+  drafted for this wrong theory but caught and never pushed before going
+  live — no harm done, but flagging the near-miss.
+
+**Actual root cause, found via git history, not guessing:** commit
+`cf7160cb` (2026-07-25T02:22:25Z), titled "PRODUCTION PORT: v2 → v1
+complete codebase replacement," intended to port **bloom-school-v2**'s
+files into the School-Bloom production app — but landed in the
+**bloom-agent** repo instead. It overwrote:
+- `style.css` — replaced with School-Bloom-v2's light pastel theme
+- `manifest.json` — replaced with School-Bloom-v2's manifest (literally
+  read `"name": "EduBloom School Portal"`)
+- `sw.js` — replaced with School-Bloom-v2's service worker (cache name
+  `edubloom-portal-v8`, not this app's own versioning line)
+
+This is the **same failure pattern as the (3) entry directly below** —
+School-Bloom content landing in this repo instead of its own — just a
+different commit, different files, same systemic cause. Two occurrences
+now. See "Bigger risk" below.
+
+`index.html` was also supposed to be part of this port per the commit
+message, but a separate emergency-restore commit (`e29916e1`, 13:50 same
+day) already caught and fixed it before this session started — so by the
+time this was investigated, index.html was already fine and only
+CSS/manifest/service-worker were still broken. That's why "app.js is
+fine, but index.html and style.css look tampered" was confusingly
+half-right at first — index.html actually *had* been tampered with, just
+already fixed by a prior session.
+
+**Fixed — all three restored from their actual last-known-good commits,
+not recreated from scratch:**
+- `style.css` ← restored from `97f662d1`. `--bg:#080f1a` dark navy
+  confirmed correct — matches the `theme-color` meta that had been
+  correctly dark in index.html the whole time.
+- `manifest.json` ← restored from `82a2f1df`. Correctly reads `"name":
+  "Bloom Agent — EduBloom"` again.
+- `sw.js` ← restored from `fab922d3` (bloom-agent's own last real version,
+  confirmed genuine by its own history of agent-specific cache bumps —
+  "School Scout AI map feature," "new AI Assist nav tab"). Cache bumped
+  to `v10` on top of the restore.
+- `index.html` — added a cache-buster (`style.css?v=20260725restore`) to
+  the stylesheet link so devices fetch the restored CSS instead of a
+  cached copy of the broken one.
+
+**How this was actually found:** not by inspecting file contents in
+isolation, but by pulling commit history (GitHub commits API, filtered
+per file) for `style.css`, `index.html`, and `manifest.json` and reading
+the actual commit messages. The commit message on the bad commit named
+the exact wrong source (bloom-school-v2) and exact wrong file scope —
+far more reliable than comparing file contents or guessing from
+screenshots. Should be the first move next time something looks
+tampered with, not the last.
+
+**Bigger risk this surfaces, now confirmed twice:** whatever process runs
+these cross-repo ports has landed content in the wrong repo at least
+twice (this entry and the (3) entry below, different commits, different
+files, same wrong-target pattern). Worth raising with Bayo as a process
+fix — a target-repo confirmation step before pushing — not just
+one-off reverts each time it happens again.
+
+**Commit:** `style.css`, `manifest.json`, `sw.js`, `index.html` all
+pushed. **Verify:** hard-refresh or clear site data on
+agent.edubloom.com.ng and confirm the dark navy theme is back.
+
 ### 2026-07-25 (3) — EMERGENCY: app.js was overwritten with School-Bloom's code, restored
 
 **What happened:** a commit landed on this repo (`app.js` +7088/-2792,
