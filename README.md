@@ -1,3 +1,33 @@
+## 📍 Current Position — 2026-08-10
+
+### ✅ Agent app login working — Firestore rules corrected
+
+**What broke (2026-08-09):** The Step 3 Firestore security rules used
+`allow read, write: if authed()` on `admin_agents`, `admin_deals`, and
+`admin_ledger`. The agent app has no Firebase Auth — it logs in by phone
+number lookup only. Every read was immediately rejected: "Firebase permission
+error."
+
+**Fixed (2026-08-10):** Corrected rules restore public read on all three
+collections agents need:
+- `admin_agents` → `allow read: if true` (phone lookup on login)
+- `admin_deals` → `allow read: if true; allow create: if true` (submit + view deals)
+- `admin_ledger` → `allow read: if true` (view earnings)
+
+Agent login, deal submission, deal list, and earnings tab are all working.
+
+**No code changes were made to bloom-agent/app.js.** The app was always
+correct — only the Firestore rules were wrong.
+
+### Standing rules for this repo
+- Cache-bust every push: bump `?v=YYYYMMDD-descriptor` in `index.html`
+  AND `CACHE_NAME` in `sw.js` in the same push
+- Update README after every push, same session, no exceptions
+- Any new agent feature: build and prove in `bloom-agent-v2` first,
+  then port verbatim to `bloom-agent`
+
+---
+
 # bloom-agent (PRODUCTION — live, real field agents)
 
 Field agent onboarding app. **This is the live app, not a test sandbox.**
