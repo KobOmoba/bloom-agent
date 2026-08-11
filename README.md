@@ -459,3 +459,25 @@ is kept in sync so the existing Show Principal panel still reads real figures.
 - **Premium users**: Scan buttons visible, scanning works normally.
 - **Free users**: Upgrade nudge visible instead of scan button, toast on scan attempt.
 - **Demo mode**: Treated as premium (scan buttons visible, no real data saved).
+
+
+---
+
+## 2026-08-10 — Strategic Decision: Basic Tier Eliminated + New Slogan
+
+**Bayo's decision:** Basic tier completely eliminated. All schools are now Premium.
+New slogan: **GIVE YOUR SCHOOL THE PREMIUM EXPERIENCE**
+
+### Changes — `index.html`
+- **Login subtitle** updated: `GIVE YOUR SCHOOL THE PREMIUM EXPERIENCE`
+- **Show Principal pitch panel** — slogan added below the location line in teal
+  (`color:#a5f3fc`) so it appears on every principal pitch screen
+- **Pitch panel footer** — slogan added above the AariNAT copyright line
+
+### No changes to pricing tiers
+The agent's tier selector (Starter 1–50, Small 51–100, Medium 101–200, Large 201–350,
+Enterprise 351+) represents size-based pricing bands for the single Premium product.
+These are not "basic vs premium" — they stay as-is.
+
+### Commit
+- `2d1231d` — index.html: slogan on login + Show Principal panel
