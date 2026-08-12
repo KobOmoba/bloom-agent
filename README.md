@@ -516,3 +516,27 @@ Prices unchanged — these ARE the premium prices.
 ### Commits
 - `0f2f0b1` — app.js: TIERS_LIST + TIERS renamed to Premium
 - `2ace785` — index.html: tier cards + labels + Show Principal updated
+
+
+---
+
+## 2026-08-12 — Premium Prices Applied (replaces basic prices)
+
+**Source:** EduBloom School Partnership Proposal document (photographed 2026-08-12).
+Formula confirmed: **Premium = Basic price × 1.5**
+
+| School Size | Basic (old) | Premium (new) |
+|---|---|---|
+| 1–50 students | ₦10,000/term | **₦15,000/term** |
+| 51–100 students | ₦20,000/term | **₦30,000/term** |
+| 101–200 students | ₦35,000/term | **₦52,500/term** |
+| 201–350 students | ₦55,000/term | **₦82,500/term** |
+| 351+ students | ₦75,000/term | **₦112,500/term** |
+
+### Files changed
+- **`app.js`** — `TIERS_LIST` and `TIERS` arrays: all five prices updated
+- **`index.html`** — all five tier card price displays updated
+
+### Commits
+- `bbfecdd` — app.js: Premium prices in TIERS_LIST + TIERS
+- `de3d99f` — index.html: tier card prices updated
