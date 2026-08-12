@@ -481,3 +481,38 @@ These are not "basic vs premium" — they stay as-is.
 
 ### Commit
 - `2d1231d` — index.html: slogan on login + Show Principal panel
+
+
+---
+
+## 2026-08-12 — Agent App: Premium Tier Naming (follows 2026-08-10 decision)
+
+**Context:** Basic tier was eliminated on 2026-08-10. All schools now get the full Premium
+Experience. The agent app was still showing the old tier names (Starter/Small/Medium/Large/
+Enterprise) which were associated with the basic product. Updated to reflect that every
+plan an agent sells is Premium.
+
+### Changes — `app.js`
+Both `TIERS_LIST` and `TIERS` arrays renamed:
+
+| Before | After |
+|---|---|
+| `Starter (1-50 students)` | `Premium · 1–50 students` |
+| `Small (51-100 students)` | `Premium · 51–100 students` |
+| `Medium (101-200 students)` | `Premium · 101–200 students` |
+| `Large (201-350 students)` | `Premium · 201–350 students` |
+| `Enterprise (351+ students)` | `Premium · 351+ students` |
+
+Prices unchanged — these ARE the premium prices.
+
+### Changes — `index.html`
+- Section label: "Select Pricing Tier" → "Select Premium Plan" with `✨ ALL PREMIUM` badge
+- Each tier card: `✨ PREMIUM` badge added above student range
+- Show Principal screen: "Selected Plan" → "✨ Premium Plan Selected"
+- Bottom confirmation: "No re-typing needed — this is ready to activate today." →
+  "No re-typing needed — this school gets the full **Premium Experience** from day one."
+- `.tier-badge` CSS added (muted purple normally, white when tier is selected)
+
+### Commits
+- `0f2f0b1` — app.js: TIERS_LIST + TIERS renamed to Premium
+- `2ace785` — index.html: tier cards + labels + Show Principal updated
