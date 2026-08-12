@@ -21,19 +21,19 @@ try {
 let agent = null;    // { id, name, phone, commission }
 let selTier = null;
 const TIERS_LIST = [
-  {max:50,  price:10000, name:'Starter (1-50 students)'},
-  {max:100, price:20000, name:'Small (51-100 students)'},
-  {max:200, price:35000, name:'Medium (101-200 students)'},
-  {max:350, price:55000, name:'Large (201-350 students)'},
-  {max:9999,price:75000, name:'Enterprise (351+ students)'}
+  {max:50,  price:10000, name:'Premium · 1–50 students'},
+  {max:100, price:20000, name:'Premium · 51–100 students'},
+  {max:200, price:35000, name:'Premium · 101–200 students'},
+  {max:350, price:55000, name:'Premium · 201–350 students'},
+  {max:9999,price:75000, name:'Premium · 351+ students'}
 ];
   // { price, name, max }
 const TIERS = [
-  { price:10000, name:'Starter (1–50)',    max:50  },
-  { price:20000, name:'Small (51–100)',    max:100 },
-  { price:35000, name:'Medium (101–200)',  max:200 },
-  { price:55000, name:'Large (201–350)',   max:350 },
-  { price:75000, name:'Enterprise (351+)', max:9999 },
+  { price:10000, name:'Premium · 1–50',    max:50  },
+  { price:20000, name:'Premium · 51–100',  max:100 },
+  { price:35000, name:'Premium · 101–200', max:200 },
+  { price:55000, name:'Premium · 201–350', max:350 },
+  { price:75000, name:'Premium · 351+',    max:9999 },
 ];
 
 // ── Sync queue ─────────────────────────────────────────────────────────────
