@@ -576,3 +576,33 @@ New: A full registration form with:
 ### Priority order (Bayo's requirement)
 1. **Firestore write first** — appears in portal immediately via real-time listener
 2. **WhatsApp second** — just an alert that something is in the portal, not a replacement for it
+
+
+---
+
+## 2026-08-12 — Agent Registration: Photo + Bank Details Added
+
+**`index.html` (`b19e311`):**
+Registration form now has 3 labelled sections:
+
+**1 · Identity**
+- Face photo — 72px circle (tap to open camera/gallery). Required.
+- Full Name
+- WhatsApp Number
+- State to Cover
+
+**2 · Bank Account for Commission**
+- Info box explaining: "Your 20% commission is paid directly into this account"
+- Bank Name (dropdown — all major Nigerian banks)
+- Account Number (10-digit NUBAN, numeric input)
+- Account Name (manual entry)
+
+**3 · How Did You Hear About Us?**
+- Free text source field
+
+**`app.js` (`38bed75`):**
+- `previewRegPhoto(event)` — resizes photo to 220×220 JPEG at 75% quality (fits in Firestore document limit), displays in the preview circle
+- `clearAcctVerify()` — clears the verification status when user changes bank/account
+- `submitAgentRequest()` now validates: photo required, all bank fields required, account number exactly 10 digits
+- Full request written to Firestore: `{name, phone, state, source, photo (base64), bankName, acctNum, acctName, status:'pending', submittedAt, platform}`
+- WhatsApp alert to Bayo includes bank details in the message body
