@@ -540,3 +540,39 @@ Formula confirmed: **Premium = Basic price × 1.5**
 ### Commits
 - `bbfecdd` — app.js: Premium prices in TIERS_LIST + TIERS
 - `de3d99f` — index.html: tier card prices updated
+
+
+---
+
+## 2026-08-12 — Agent Registration Flow (replaces dead WhatsApp link)
+
+### Problem
+"New Agent?" tab showed: "Contact Bayo · +234 814 507 3941" + WhatsApp button.
+No form, no Firestore write, no portal notification. Bayo had to manually add agents.
+
+### What was built
+
+**`index.html` (`367f77f`):**
+Old: A paragraph saying "self-registration not allowed + WhatsApp link"
+New: A full registration form with:
+- Full Name
+- WhatsApp Phone Number (normalised to 234XXXXXXXXXX)
+- State they will cover (all 36 states + FCT dropdown)
+- How they heard about EduBloom (text input)
+- "📨 Submit Request" button
+- Success message on completion (fields hidden, green confirmation shown)
+- Note: "Your request goes directly into Bayo's admin portal. WhatsApp alert also sent as backup."
+
+**`app.js` (`add8951`):**
+- `doRegister()` now routes to `submitAgentRequest()` instead of showing error
+- `submitAgentRequest()`:
+  - Validates name, phone, state
+  - Normalises phone to international format (234XXXXXXXXXX)
+  - Writes to `admin_agent_requests` collection in Firestore with `{name, phone, state, source, status:'pending', submittedAt, platform:'agent-app'}`
+  - Offline fallback: saves to localStorage if no connection
+  - After success: hides form, shows green confirmation
+  - After 800ms: opens WhatsApp to Bayo's number as a secondary alert only (not the primary notification)
+
+### Priority order (Bayo's requirement)
+1. **Firestore write first** — appears in portal immediately via real-time listener
+2. **WhatsApp second** — just an alert that something is in the portal, not a replacement for it
