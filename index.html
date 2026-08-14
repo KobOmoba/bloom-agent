@@ -34,20 +34,71 @@
         ✅ <b>Request submitted!</b><br>Bayo will review and contact you on WhatsApp within 24 hours.<br><span style="color:var(--sub);font-size:0.78rem;">You can close this page now.</span>
       </div>
       <div id="reg-fields">
+
+        <!-- ── SECTION 1: IDENTITY ── -->
+        <div style="font-size:0.68rem;font-weight:800;color:var(--sub);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.5rem;">1 · Identity</div>
+
+        <!-- Face photo -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem;">
+          <div id="reg-photo-preview" onclick="$('reg-photo-input').click()"
+            style="width:72px;height:72px;border-radius:50%;border:2px dashed var(--brand);background:var(--s2);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0;">
+            <span id="reg-photo-icon" style="font-size:1.6rem;">📷</span>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:3px;">Your Photo</div>
+            <div style="font-size:0.72rem;color:var(--sub);line-height:1.5;">Clear face photo for identity verification. Tap the circle to take or upload.</div>
+            <button onclick="$('reg-photo-input').click()" style="margin-top:5px;background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:3px 10px;font-size:0.75rem;cursor:pointer;color:var(--text);">📸 Take / Upload Photo</button>
+          </div>
+        </div>
+        <input type="file" id="reg-photo-input" accept="image/*" capture="user" style="display:none;" onchange="previewRegPhoto(event)">
+        <input type="hidden" id="reg-photo-b64">
+
         <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">Full Name</label>
         <input id="reg-name" type="text" placeholder="e.g. David Adeyemi" autocomplete="name" style="margin-bottom:0.5rem;">
+
         <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">WhatsApp Number</label>
         <input id="reg-phone" type="tel" placeholder="e.g. 08012345678" inputmode="tel" style="margin-bottom:0.5rem;">
+
         <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">State You Will Cover</label>
-        <select id="reg-state" style="margin-bottom:0.5rem;">
+        <select id="reg-state" style="margin-bottom:0.75rem;">
           <option value="">— Select State —</option>
           <option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT — Abuja</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option>
         </select>
-        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">How Did You Hear About EduBloom?</label>
-        <input id="reg-source" type="text" placeholder="e.g. Friend, Social media, NAPPS event" style="margin-bottom:0.75rem;">
-        <button class="btn-money" onclick="submitAgentRequest()" id="reg-submit-btn">📨 Submit Request</button>
+
+        <!-- ── SECTION 2: BANK DETAILS (for 20% commission) ── -->
+        <div style="font-size:0.68rem;font-weight:800;color:var(--sub);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.4rem;margin-top:0.25rem;">2 · Bank Account for Commission</div>
+        <div style="background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.2);border-radius:9px;padding:10px 12px;margin-bottom:0.65rem;font-size:0.75rem;color:var(--sub);line-height:1.6;">
+          Your <b style="color:var(--text);">20% commission</b> on every approved school is paid directly into this account. We verify the account name automatically.
+        </div>
+
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">Bank Name</label>
+        <select id="reg-bank-name" style="margin-bottom:0.5rem;" onchange="clearAcctVerify()">
+          <option value="">— Select Bank —</option>
+          <option>Access Bank</option><option>Ecobank Nigeria</option><option>FCMB</option>
+          <option>Fidelity Bank</option><option>First Bank of Nigeria</option><option>GTBank</option>
+          <option>Heritage Bank</option><option>Keystone Bank</option><option>Kuda Bank</option>
+          <option>Moniepoint</option><option>Opay</option><option>Palmpay</option>
+          <option>Polaris Bank</option><option>Stanbic IBTC Bank</option><option>Sterling Bank</option>
+          <option>UBA</option><option>Union Bank</option><option>VFD Microfinance Bank</option>
+          <option>Wema Bank</option><option>Zenith Bank</option>
+        </select>
+
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">Account Number <span style="font-weight:400;font-size:0.68rem;">(10-digit NUBAN)</span></label>
+        <input id="reg-acct-num" type="text" inputmode="numeric" maxlength="10" placeholder="0123456789" oninput="clearAcctVerify()" style="margin-bottom:0.5rem;">
+
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">Account Name</label>
+        <div style="display:flex;gap:6px;margin-bottom:0.5rem;">
+          <input id="reg-acct-name" type="text" placeholder="Enter account name" style="flex:1;">
+        </div>
+        <div id="reg-acct-verify" style="font-size:0.75rem;margin-bottom:0.65rem;display:none;"></div>
+
+        <!-- ── SECTION 3: SOURCE ── -->
+        <div style="font-size:0.68rem;font-weight:800;color:var(--sub);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.4rem;margin-top:0.25rem;">3 · How Did You Hear About Us?</div>
+        <input id="reg-source" type="text" placeholder="e.g. Friend referral, Social media, NAPPS event" style="margin-bottom:0.75rem;">
+
+        <button class="btn-money" onclick="submitAgentRequest()" id="reg-submit-btn" style="width:100%;">📨 Submit Registration Request</button>
         <div id="reg-err" style="color:#ef4444;font-size:0.78rem;margin-top:0.4rem;display:none;"></div>
-        <p style="font-size:0.72rem;color:var(--sub);margin-top:0.65rem;text-align:center;line-height:1.6;">Your request goes directly into Bayo's admin portal.<br>WhatsApp alert also sent as backup.</p>
+        <p style="font-size:0.72rem;color:var(--sub);margin-top:0.65rem;text-align:center;line-height:1.6;">Request goes directly into Bayo's admin portal.<br>You'll be contacted on WhatsApp within 24 hours.</p>
       </div>
     </div>
     <div id="login-err" class="err-box"></div>
