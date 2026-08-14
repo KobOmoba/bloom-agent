@@ -30,15 +30,25 @@
       <button id="l-btn" class="btn-brand" onclick="doLogin()">▶ Login</button>
     </div>
     <div id="register-form" style="display:none;">
-      <p style="font-size:0.85rem;color:var(--sub);padding:1rem;background:#0a1525;border-radius:10px;line-height:1.6;">
-        Agent accounts are created by AariNAT admin.<br><br>
-        📞 Call or WhatsApp Bayo:<br>
-        <strong style="color:var(--text);">+234 814 507 3941</strong><br><br>
-        Once registered, come back and login with your phone number.
-      </p>
-      <a href="https://wa.me/2348145073941?text=I%20want%20to%20become%20an%20Educational%20Bloom%20agent" target="_blank" style="text-decoration:none;">
-        <button class="btn-money">💬 WhatsApp AariNAT to Register</button>
-      </a>
+      <div id="reg-pending-msg" style="display:none;background:rgba(16,185,129,0.1);border:1px solid #10b981;border-radius:10px;padding:1rem;font-size:0.85rem;text-align:center;line-height:1.7;margin-bottom:0.5rem;">
+        ✅ <b>Request submitted!</b><br>Bayo will review and contact you on WhatsApp within 24 hours.<br><span style="color:var(--sub);font-size:0.78rem;">You can close this page now.</span>
+      </div>
+      <div id="reg-fields">
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">Full Name</label>
+        <input id="reg-name" type="text" placeholder="e.g. David Adeyemi" autocomplete="name" style="margin-bottom:0.5rem;">
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">WhatsApp Number</label>
+        <input id="reg-phone" type="tel" placeholder="e.g. 08012345678" inputmode="tel" style="margin-bottom:0.5rem;">
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">State You Will Cover</label>
+        <select id="reg-state" style="margin-bottom:0.5rem;">
+          <option value="">— Select State —</option>
+          <option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT — Abuja</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option>
+        </select>
+        <label style="font-size:0.75rem;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:0.06em;">How Did You Hear About EduBloom?</label>
+        <input id="reg-source" type="text" placeholder="e.g. Friend, Social media, NAPPS event" style="margin-bottom:0.75rem;">
+        <button class="btn-money" onclick="submitAgentRequest()" id="reg-submit-btn">📨 Submit Request</button>
+        <div id="reg-err" style="color:#ef4444;font-size:0.78rem;margin-top:0.4rem;display:none;"></div>
+        <p style="font-size:0.72rem;color:var(--sub);margin-top:0.65rem;text-align:center;line-height:1.6;">Your request goes directly into Bayo's admin portal.<br>WhatsApp alert also sent as backup.</p>
+      </div>
     </div>
     <div id="login-err" class="err-box"></div>
   </div><!-- /.login-box -->
