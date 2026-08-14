@@ -172,8 +172,69 @@ async function refreshAgentBackground(agentId, phone, localFmt){
 }
 
 async function doRegister(){
-  // Self-registration is not allowed — agents must be added by admin
-  showErr("You can't self-register. AariNAT must add you. Call +234 814 507 3941");
+  // doRegister is called by the old tab — route to the form submission
+  submitAgentRequest();
+}
+
+async function submitAgentRequest(){
+  const name   = ($('reg-name')?.value   || '').trim();
+  const rawPh  = ($('reg-phone')?.value  || '').trim();
+  const state  = ($('reg-state')?.value  || '').trim();
+  const source = ($('reg-source')?.value || '').trim();
+
+  const showRegErr = (msg) => {
+    const e = $('reg-err');
+    if(e){ e.textContent = msg; e.style.display = 'block'; }
+  };
+
+  if (!name)         return showRegErr('Please enter your full name.');
+  if (!rawPh)        return showRegErr('Please enter your WhatsApp phone number.');
+  const digits = rawPh.replace(/\D/g,'');
+  if (digits.length < 10) return showRegErr('Phone number must be at least 10 digits.');
+  if (!state)        return showRegErr('Please select the state you will cover.');
+
+  // Normalise phone — ensure it starts with 234
+  const phone = digits.length === 11 && digits.startsWith('0')
+    ? '234' + digits.slice(1)
+    : digits.startsWith('234') ? digits
+    : '234' + digits;
+
+  const btn = $('reg-submit-btn');
+  if(btn){ btn.textContent = 'Submitting...'; btn.disabled = true; }
+
+  const request = {
+    name, phone, state, source: source || 'Not specified',
+    status: 'pending',
+    submittedAt: new Date(),
+    platform: 'agent-app'
+  };
+
+  try {
+    if(db){
+      await db.collection('admin_agent_requests').add(request);
+    } else {
+      // Offline — save to localStorage and sync when connection returns
+      const pending = JSON.parse(localStorage.getItem('pendingAgentRequest')||'null');
+      if(!pending) localStorage.setItem('pendingAgentRequest', JSON.stringify(request));
+    }
+
+    // Show success
+    const fields = $('reg-fields');
+    const msg    = $('reg-pending-msg');
+    if(fields) fields.style.display = 'none';
+    if(msg)    msg.style.display    = 'block';
+
+    // WhatsApp alert to Bayo — secondary notification only
+    setTimeout(() => {
+      const waMsg = `🌸 *New EduBloom Agent Request*\n\n*Name:* ${name}\n*Phone:* ${phone}\n*State:* ${state}\n*Source:* ${source||'Not specified'}\n\nCheck your portal → Agent Requests to approve.`;
+      window.open(`https://wa.me/2348145073941?text=${encodeURIComponent(waMsg)}`, '_blank');
+    }, 800);
+
+  } catch(e) {
+    if(btn){ btn.textContent = '📨 Submit Request'; btn.disabled = false; }
+    showRegErr('Could not submit. Check your connection and try again.');
+    console.error('Agent request failed:', e.message);
+  }
 }
 
 function showErr(msg){ const e=$('login-err'); e.textContent=msg; e.style.display='block'; }
