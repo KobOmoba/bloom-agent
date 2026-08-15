@@ -57,7 +57,7 @@ window.addEventListener('online', ()=>{ SQ.ping(); SQ.run(); });
 window.addEventListener('offline', ()=>SQ.ping());
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const esc = s => { if(!s)return''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML.replace(/'/g,"&#39;"); };
+const esc = s => { if(!s)return''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; };
 const $ = id => document.getElementById(id);
 const openM = id => { const e = document.getElementById(id); if (e) e.classList.add('on'); };
 const closeM = id => { const e = document.getElementById(id); if (e) e.classList.remove('on'); };
@@ -171,51 +171,100 @@ async function refreshAgentBackground(agentId, phone, localFmt){
   }catch(e){ /* silent — cached profile is valid */ }
 }
 
+// ── Agent registration photo resize ──────────────────────────────────────
+function previewRegPhoto(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      // Resize to 220×220 thumbnail
+      const SIZE = 220;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      // Crop to square from centre
+      const side = Math.min(img.width, img.height);
+      const sx = (img.width  - side) / 2;
+      const sy = (img.height - side) / 2;
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
+      const b64 = canvas.toDataURL('image/jpeg', 0.75);
+      // Show preview
+      const preview = $('reg-photo-preview');
+      const icon    = $('reg-photo-icon');
+      if (preview) preview.style.background = `url(${b64}) center/cover`;
+      if (icon)    icon.style.display = 'none';
+      // Store base64
+      const inp = $('reg-photo-b64');
+      if (inp) inp.value = b64;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearAcctVerify() {
+  const el = $('reg-acct-verify');
+  if (el) { el.textContent = ''; el.style.display = 'none'; }
+}
+
 async function doRegister(){
-  // doRegister is called by the old tab — route to the form submission
   submitAgentRequest();
 }
 
 async function submitAgentRequest(){
-  const name   = ($('reg-name')?.value   || '').trim();
-  const rawPh  = ($('reg-phone')?.value  || '').trim();
-  const state  = ($('reg-state')?.value  || '').trim();
-  const source = ($('reg-source')?.value || '').trim();
+  const name    = ($('reg-name')?.value    || '').trim();
+  const rawPh   = ($('reg-phone')?.value   || '').trim();
+  const state   = ($('reg-state')?.value   || '').trim();
+  const source  = ($('reg-source')?.value  || '').trim();
+  const photo   = ($('reg-photo-b64')?.value || '');
+  const bankName = ($('reg-bank-name')?.value || '').trim();
+  const acctNum  = ($('reg-acct-num')?.value  || '').replace(/\D/g,'');
+  const acctName = ($('reg-acct-name')?.value || '').trim();
 
   const showRegErr = (msg) => {
     const e = $('reg-err');
     if(e){ e.textContent = msg; e.style.display = 'block'; }
+    else  { showErr(msg); }
   };
+  // Clear previous error
+  const errEl = $('reg-err');
+  if(errEl) errEl.style.display = 'none';
 
-  if (!name)         return showRegErr('Please enter your full name.');
-  if (!rawPh)        return showRegErr('Please enter your WhatsApp phone number.');
+  if (!photo)    return showRegErr('Please take or upload your photo — tap the circle above.');
+  if (!name)     return showRegErr('Please enter your full name.');
+  if (!rawPh)    return showRegErr('Please enter your WhatsApp phone number.');
   const digits = rawPh.replace(/\D/g,'');
   if (digits.length < 10) return showRegErr('Phone number must be at least 10 digits.');
-  if (!state)        return showRegErr('Please select the state you will cover.');
+  if (!state)    return showRegErr('Please select the state you will cover.');
+  if (!bankName) return showRegErr('Please select your bank for commission payments.');
+  if (acctNum.length !== 10) return showRegErr('Account number must be exactly 10 digits.');
+  if (!acctName) return showRegErr('Please enter your account name.');
 
-  // Normalise phone — ensure it starts with 234
+  // Normalise phone
   const phone = digits.length === 11 && digits.startsWith('0')
     ? '234' + digits.slice(1)
-    : digits.startsWith('234') ? digits
-    : '234' + digits;
+    : digits.startsWith('234') ? digits : '234' + digits;
 
   const btn = $('reg-submit-btn');
   if(btn){ btn.textContent = 'Submitting...'; btn.disabled = true; }
 
   const request = {
-    name, phone, state, source: source || 'Not specified',
-    status: 'pending',
+    name, phone, state,
+    source:   source || 'Not specified',
+    photo,                           // base64 JPEG thumbnail
+    bankName, acctNum, acctName,     // commission payment details
+    status:      'pending',
     submittedAt: new Date(),
-    platform: 'agent-app'
+    platform:    'agent-app'
   };
 
   try {
     if(db){
       await db.collection('admin_agent_requests').add(request);
     } else {
-      // Offline — save to localStorage and sync when connection returns
-      const pending = JSON.parse(localStorage.getItem('pendingAgentRequest')||'null');
-      if(!pending) localStorage.setItem('pendingAgentRequest', JSON.stringify(request));
+      localStorage.setItem('pendingAgentRequest', JSON.stringify({...request, photo:'[photo saved]'}));
     }
 
     // Show success
@@ -224,16 +273,16 @@ async function submitAgentRequest(){
     if(fields) fields.style.display = 'none';
     if(msg)    msg.style.display    = 'block';
 
-    // WhatsApp alert to Bayo — secondary notification only
+    // WhatsApp alert to Bayo — secondary only
     setTimeout(() => {
-      const waMsg = `🌸 *New EduBloom Agent Request*\n\n*Name:* ${name}\n*Phone:* ${phone}\n*State:* ${state}\n*Source:* ${source||'Not specified'}\n\nCheck your portal → Agent Requests to approve.`;
+      const waMsg = `🌸 *New Edu-BLOOM Agent Request*\n\n*Name:* ${name}\n*Phone:* ${phone}\n*State:* ${state}\n*Bank:* ${bankName} · ${acctNum} · ${acctName}\n*Source:* ${source||'Not specified'}\n\nCheck your portal → Agent Requests to approve.`;
       window.open(`https://wa.me/2348145073941?text=${encodeURIComponent(waMsg)}`, '_blank');
     }, 800);
 
   } catch(e) {
-    if(btn){ btn.textContent = '📨 Submit Request'; btn.disabled = false; }
-    showRegErr('Could not submit. Check your connection and try again.');
-    console.error('Agent request failed:', e.message);
+    if(btn){ btn.textContent = '📨 Submit Registration Request'; btn.disabled = false; }
+    showRegErr('Could not submit. Check your internet connection and try again.');
+    console.error('Agent request submit failed:', e.message);
   }
 }
 
@@ -551,7 +600,7 @@ async function renderDeals(){
 }
 
 function resendOnboarding(phone, schoolName, schoolId){
-  const msg=`Hi! I'm your Educational Bloom agent.\n\nYour school "${schoolName}" has been activated! 🎉\n\n*School ID:* ${schoolId}\n\nLog in at: https://school.edubloom.com.ng\n\nI'll guide you through the setup. Call me anytime! 📞\n– ${agent.name}`;
+  const msg=`Hi! I'm your Edu-BLOOM agent.\n\nYour school "${schoolName}" has been activated! 🎉\n\n*School ID:* ${schoolId}\n\nLog in at: https://school.edubloom.com.ng\n\nI'll guide you through the setup. Call me anytime! 📞\n– ${agent.name}`;
   window.open(`https://wa.me/${phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 
@@ -1102,7 +1151,7 @@ async function runScoutAI() {
         if (el) el.textContent = '📍 Found ' + schools.length + (schools.length > 1 ? ' schools' : ' school') + ' nearby — tap a pin for the name.\n\nGenerating a visit plan...';
         try {
           const tips = await groqChatText(
-            'You are a field sales coach for EduBloom, a Nigerian school management app. An agent is standing near these schools right now: ' + names + '. Give a short prioritized visit plan (under 100 words): which 2-3 to try first and why, plus a one-line opener for the gatekeeper. No markdown or asterisks.',
+            'You are a field sales coach for Edu-BLOOM, a Nigerian school management app. An agent is standing near these schools right now: ' + names + '. Give a short prioritized visit plan (under 100 words): which 2-3 to try first and why, plus a one-line opener for the gatekeeper. No markdown or asterisks.',
             300
           );
           if (el) el.textContent = '📍 Found ' + schools.length + (schools.length > 1 ? ' schools' : ' school') + ' nearby — tap a pin for the name.\n\n' + tips;
@@ -1155,7 +1204,7 @@ async function runScoutAIFallback() {
   if (el) el.textContent = '🔍 Thinking...';
   try {
     const text = await groqChatText(
-      'You are a field sales coach for EduBloom, a Nigerian school management app. An agent is scouting for private/Islamic/nursery schools in "' + area + '" today. Give: 1) 3 concrete places/times to find school proprietors there today (specific to Nigerian context — market days, morning drop-off, notice boards, etc), 2) a one-line opener to say to a school gatekeeper, 3) 2 quick qualifying questions to check the school is a good fit (uses paper registers, 50+ students). Under 120 words total, short plain lines, no markdown headers or asterisks.',
+      'You are a field sales coach for Edu-BLOOM, a Nigerian school management app. An agent is scouting for private/Islamic/nursery schools in "' + area + '" today. Give: 1) 3 concrete places/times to find school proprietors there today (specific to Nigerian context — market days, morning drop-off, notice boards, etc), 2) a one-line opener to say to a school gatekeeper, 3) 2 quick qualifying questions to check the school is a good fit (uses paper registers, 50+ students). Under 120 words total, short plain lines, no markdown headers or asterisks.',
       350
     );
     if (el) el.textContent = text;
@@ -1171,7 +1220,7 @@ async function runPitchCoachAI() {
   if (el) el.textContent = '🎯 Thinking...';
   try {
     const text = await groqChatText(
-      'You are a sales coach for EduBloom, a Nigerian school management app (attendance, fee collection via BloomCollect, report cards, automated parent WhatsApp safety alerts). Write a short natural spoken sales pitch (under 90 words) an agent can say to the proprietor of a "' + type + '" in Nigeria to get them interested in a free demo. Conversational tone, no markdown or asterisks, mention 1-2 benefits most relevant to this school type.',
+      'You are a sales coach for Edu-BLOOM, a Nigerian school management app (attendance, fee collection via BloomCollect, report cards, automated parent WhatsApp safety alerts). Write a short natural spoken sales pitch (under 90 words) an agent can say to the proprietor of a "' + type + '" in Nigeria to get them interested in a free demo. Conversational tone, no markdown or asterisks, mention 1-2 benefits most relevant to this school type.',
       300
     );
     if (el) el.textContent = text;
@@ -1187,7 +1236,7 @@ async function runObjectionAI() {
   if (el) el.textContent = '🛡️ Thinking...';
   try {
     const text = await groqChatText(
-      'You are a sales coach for EduBloom, a Nigerian school management app. A school proprietor just said: "' + obj + '". Give the agent a short, confident, respectful reply (under 80 words) to overcome this objection, natural spoken Nigerian English, no markdown or asterisks.',
+      'You are a sales coach for Edu-BLOOM, a Nigerian school management app. A school proprietor just said: "' + obj + '". Give the agent a short, confident, respectful reply (under 80 words) to overcome this objection, natural spoken Nigerian English, no markdown or asterisks.',
       250
     );
     if (el) el.textContent = text;
@@ -1203,7 +1252,7 @@ async function runFollowupAI() {
   if (el) el.textContent = '📲 Thinking...';
   try {
     const text = await groqChatText(
-      'Write a short WhatsApp follow-up message (under 60 words) from an EduBloom sales agent to a school principal. Scenario: "' + scenario + '". Warm professional Nigerian tone, include a clear next step or call-to-action, no markdown or asterisks, no bracket placeholders.',
+      'Write a short WhatsApp follow-up message (under 60 words) from an Edu-BLOOM sales agent to a school principal. Scenario: "' + scenario + '". Warm professional Nigerian tone, include a clear next step or call-to-action, no markdown or asterisks, no bracket placeholders.',
       200
     );
     if (el) el.textContent = text;
@@ -3144,7 +3193,7 @@ function renderSettingsProfile() {
       </div>
 
       <div style="text-align:center;font-size:0.7rem;color:var(--sub);padding:1rem 0;">
-        Educational Bloom Agent App · Built by AariNAT<br>
+        Edu-BLOOM Agent App · Built by AariNAT<br>
         v2.3 · OCR: AariNAT AI + Groq Vision (auto-configured)
       </div>
     </div>
