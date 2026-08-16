@@ -628,3 +628,18 @@ entirely) across all three apps and all WhatsApp message templates.
 - After: `ctx.fillStyle = '#7c3aed'` (purple) → `fillText('Edu-', ...)` + `ctx.fillStyle = '#f97316'` (orange) → `fillText('BLOOM', ...)`
 
 The hyphen is now included. Logo baseline raised from y=55 to y=57 to accommodate 30px font (was 28px).
+
+
+
+---
+
+## 2026-08-16 — Edu-BLOOM User Manual Released
+
+A 32-page user manual for the Edu-BLOOM school app has been written and committed to
+the School-Bloom repo as `EduBLOOM_School_App_Manual.docx`. Written in plain English
+with zero technical jargon. All 23 feature areas covered with step-by-step instructions.
+
+An in-app help system (18 searchable accordion topics) was also added to the school app
+under ❓ Support in the menu.
+
+No changes to bloom-agent in this session.
