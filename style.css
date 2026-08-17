@@ -9,8 +9,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;paddi
 h1,h2,h3,h4{font-family:'Syne',sans-serif;}
 
 /* LOGIN */
-.login{position:fixed;inset:0;background:linear-gradient(160deg,#080f1a 0%,#0a1628 50%,#060d18 100%);display:flex;align-items:center;justify-content:center;padding:1.5rem;z-index:100;}
-.login-box{width:100%;max-width:380px;}
+.login{position:fixed;inset:0;background:linear-gradient(160deg,#080f1a 0%,#0a1628 50%,#060d18 100%);display:flex;align-items:flex-start;justify-content:center;padding:1.5rem;z-index:100;overflow-y:auto;}
+.login-box{width:100%;max-width:380px;margin:auto;}
 .login-logo{font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;color:var(--text);margin-bottom:0.25rem;}
 .login-sub{font-size:0.83rem;color:var(--sub);margin-bottom:2rem;}
 .login-tabs{display:flex;background:var(--card);border-radius:10px;padding:4px;gap:4px;margin-bottom:1.5rem;}
