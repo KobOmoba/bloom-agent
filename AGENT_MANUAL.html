@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edu-BLOOM Agent App — User Manual</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #080f1a;
+  --surface: #0f1d2e;
+  --card: #152234;
+  --border: #1e3347;
+  --brand: #3b82f6;
+  --money: #10b981;
+  --warn: #f59e0b;
+  --danger: #f43f5e;
+  --purple: #7c3aed;
+  --text: #f0f6ff;
+  --sub: #7a9bbf;
+  --radius: 14px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+/* COVER */
+.cover {
+  background: linear-gradient(160deg, #080f1a 0%, #0d1e35 50%, #060d18 100%);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3rem 2rem;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(124,58,237,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.cover-logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+}
+.cover-logo span.edu { color: var(--purple); }
+.cover-logo span.bloom { color: #f97316; }
+.cover-badge {
+  display: inline-block;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--brand);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+.cover-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 2.2rem;
+  font-weight: 800;
+  max-width: 560px;
+  line-height: 1.2;
+  margin-bottom: 1rem;
+}
+.cover-sub {
+  color: var(--sub);
+  max-width: 420px;
+  margin-bottom: 3rem;
+  font-size: 0.92rem;
+}
+.cover-slogan {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+}
+.cover-version {
+  margin-top: 1rem;
+  font-size: 0.72rem;
+  color: var(--sub);
+}
+
+/* TOC */
+.toc {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 3rem 2rem;
+}
+.toc-inner { max-width: 740px; margin: 0 auto; }
+.section-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--brand);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 1.25rem;
+}
+.toc h2 {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+}
+.toc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+.toc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.65rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 600;
+  transition: 0.15s;
+}
+.toc-item:hover { border-color: var(--brand); color: var(--brand); }
+.toc-num {
+  font-family: 'Syne', sans-serif;
+  font-size: 0.7rem;
+  color: var(--sub);
+  min-width: 20px;
+}
+
+/* CONTENT */
+.content { max-width: 740px; margin: 0 auto; padding: 0 2rem 5rem; }
+
+.chapter {
+  padding: 3.5rem 0 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.chapter:last-child { border-bottom: none; }
+
+.ch-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin-bottom: 0.5rem;
+}
+.ch-eyebrow.green { color: var(--money); }
+.ch-eyebrow.purple { color: var(--purple); }
+.ch-eyebrow.orange { color: #f97316; }
+.ch-eyebrow.warn { color: var(--warn); }
+
+h2.ch-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 0.35rem;
+  line-height: 1.2;
+}
+.ch-desc {
+  color: var(--sub);
+  margin-bottom: 1.75rem;
+  font-size: 0.88rem;
+}
+
+h3.sub-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 1.75rem 0 0.6rem;
+  color: var(--text);
+}
+h3.sub-title::before {
+  content: '▸ ';
+  color: var(--brand);
+  font-size: 0.8rem;
+}
+
+p { margin-bottom: 0.9rem; color: var(--text); }
+
+/* STEP CARDS */
+.steps { display: flex; flex-direction: column; gap: 0.75rem; margin: 1rem 0 1.5rem; }
+.step {
+  display: flex;
+  gap: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  align-items: flex-start;
+}
+.step-num {
+  background: var(--brand);
+  color: white;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.78rem;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.step-num.green { background: var(--money); }
+.step-num.purple { background: var(--purple); }
+.step-num.orange { background: #f97316; }
+.step-body strong {
+  display: block;
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 3px;
+}
+.step-body span { font-size: 0.83rem; color: var(--sub); line-height: 1.6; }
+
+/* INFO BOXES */
+.info-box {
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  margin: 1rem 0 1.25rem;
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+.info-box.blue { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); color: #93c5fd; }
+.info-box.green { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); color: #6ee7b7; }
+.info-box.orange { background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.25); color: #fdba74; }
+.info-box.warn { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fcd34d; }
+.info-box.purple { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.25); color: #c4b5fd; }
+.info-box strong { color: white; }
+
+/* TIER TABLE */
+.tier-table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.25rem; font-size: 0.85rem; }
+.tier-table th {
+  background: #0a1525;
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--sub);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tier-table td {
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.tier-table tr:last-child td { border-bottom: none; }
+.tier-table .price { color: var(--money); font-family: 'Syne', sans-serif; font-weight: 800; }
+.tier-table .comm { color: var(--brand); font-weight: 700; }
+.tier-table .premium-badge {
+  display: inline-block;
+  background: rgba(124,58,237,0.15);
+  color: #c4b5fd;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* OCR CASCADE */
+.cascade {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1rem;
+}
+.cascade-node {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.cascade-node.primary { border-color: var(--brand); color: var(--brand); }
+.cascade-node.secondary { border-color: var(--money); color: var(--money); }
+.cascade-node.tertiary { color: var(--sub); }
+.cascade-arrow { color: var(--sub); font-size: 0.8rem; }
+
+/* FEATURE GRID */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0 1.25rem;
+}
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.feature-icon { font-size: 1.4rem; margin-bottom: 0.4rem; }
+.feature-card strong { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 3px; }
+.feature-card span { font-size: 0.78rem; color: var(--sub); line-height: 1.55; }
+
+/* TROUBLESHOOT */
+.trouble-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  margin-bottom: 0.65rem;
+}
+.trouble-q { font-weight: 700; font-size: 0.88rem; margin-bottom: 0.35rem; }
+.trouble-a { font-size: 0.83rem; color: var(--sub); line-height: 1.6; }
+.trouble-a strong { color: var(--text); }
+
+/* DIVIDER */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2rem 0;
+}
+
+/* FOOTER */
+.footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.footer strong { color: var(--text); }
+
+@media (max-width: 600px) {
+  .cover-title { font-size: 1.6rem; }
+  .cover-logo { font-size: 2.2rem; }
+  h2.ch-title { font-size: 1.4rem; }
+  .content { padding: 0 1.25rem 4rem; }
+  .toc { padding: 2rem 1.25rem; }
+  .chapter { padding: 2.5rem 0 1.5rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="cover-badge">Field Agent Manual</div>
+  <div class="cover-logo"><span class="edu">Edu-</span><span class="bloom">BLOOM</span></div>
+  <div class="cover-title">Agent App Complete User Guide</div>
+  <div class="cover-sub">Everything you need to log in, scan schools, submit deals, and earn your 20% commission — step by step, in plain language.</div>
+  <div class="cover-slogan">Give your school the premium experience</div>
+  <div class="cover-version">Version · August 2026 &nbsp;|&nbsp; agent.edubloom.com.ng</div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+  <div class="toc-inner">
+    <div class="section-label">What's Inside</div>
+    <h2>Table of Contents</h2>
+    <div class="toc-grid">
+      <a href="#ch1" class="toc-item"><span class="toc-num">01</span> What Is This App?</a>
+      <a href="#ch2" class="toc-item"><span class="toc-num">02</span> Logging In</a>
+      <a href="#ch3" class="toc-item"><span class="toc-num">03</span> New Agent Registration</a>
+      <a href="#ch4" class="toc-item"><span class="toc-num">04</span> Dashboard Overview</a>
+      <a href="#ch5" class="toc-item"><span class="toc-num">05</span> Scan School Signboard</a>
+      <a href="#ch6" class="toc-item"><span class="toc-num">06</span> Smart Register Counter</a>
+      <a href="#ch7" class="toc-item"><span class="toc-num">07</span> Financial Ledger Scan</a>
+      <a href="#ch8" class="toc-item"><span class="toc-num">08</span> School Details Form</a>
+      <a href="#ch9" class="toc-item"><span class="toc-num">09</span> Premium Plans & Pricing</a>
+      <a href="#ch10" class="toc-item"><span class="toc-num">10</span> Show Principal Panel</a>
+      <a href="#ch11" class="toc-item"><span class="toc-num">11</span> Submitting a Deal</a>
+      <a href="#ch12" class="toc-item"><span class="toc-num">12</span> My Deals</a>
+      <a href="#ch13" class="toc-item"><span class="toc-num">13</span> My Earnings</a>
+      <a href="#ch14" class="toc-item"><span class="toc-num">14</span> Tips & Troubleshooting</a>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="content">
+
+  <!-- CH 1 -->
+  <div id="ch1" class="chapter">
+    <div class="ch-eyebrow">Chapter 01</div>
+    <h2 class="ch-title">What Is This App?</h2>
+    <p class="ch-desc">The short answer: it's your toolkit for visiting schools, counting students, and sending deals to Bayo for approval — all from your phone.</p>
+
+    <p>The Edu-BLOOM Agent App is a mobile web application for field agents. You use it when you visit a school, speak to the Principal, and want to sign them up to the Edu-BLOOM Premium platform. Everything from scanning the school signboard to submitting the deal is done inside this one app.</p>
+
+    <p>The app lives at <strong>agent.edubloom.com.ng</strong> and works like a normal website, but it can be added to your home screen so it opens like an installed app — no Play Store or App Store needed.</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📷</div>
+        <strong>Signboard Scan</strong>
+        <span>Point your camera at the school sign — name, address, LGA and state fill in automatically.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📋</div>
+        <strong>Register Counter</strong>
+        <span>Photograph the class register or paste student names. The AI counts students for you.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💳</div>
+        <strong>Ledger Scan</strong>
+        <span>Photograph the school fees ledger page by page. AI extracts who has paid and who hasn't.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✨</div>
+        <strong>Premium Plans</strong>
+        <span>Select the right plan based on student count. All plans are now full Premium.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <strong>Show Principal</strong>
+        <span>A full-screen pitch screen — school name, headcount, and plan — to show the Principal before submitting.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💰</div>
+        <strong>20% Commission</strong>
+        <span>Every approved deal earns you 20% of the term fee, paid to your registered bank account.</span>
+      </div>
+    </div>
+
+    <div class="info-box blue">
+      <strong>Important:</strong> This is the <em>live production app</em>. Deals you submit here go directly to Bayo's portal and affect real schools. Always verify everything on a real device before closing an interaction.
+    </div>
+  </div>
+
+  <!-- CH 2 -->
+  <div id="ch2" class="chapter">
+    <div class="ch-eyebrow">Chapter 02</div>
+    <h2 class="ch-title">Logging In</h2>
+    <p class="ch-desc">Login uses your WhatsApp phone number — no password, no email.</p>
+
+    <p>Open the app at <strong>agent.edubloom.com.ng</strong>. You will see the Edu-BLOOM Agent login screen with two tabs at the top: <strong>Login</strong> and <strong>New Agent?</strong></p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Make sure the Login tab is selected</strong>
+          <span>It is selected by default (shown in blue). Tap it if not.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Enter your WhatsApp number</strong>
+          <span>Type your number in international format — start with 234, then your number without the leading 0. For example: <strong>2348012345678</strong></span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Tap ▶ Login</strong>
+          <span>Or press Enter on your keyboard. The app looks up your number in the system.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>You are in</strong>
+          <span>Your name and a green "Online" indicator appear at the top. The main tabs (Home, New Deal, Deals, Earnings) are now visible at the bottom.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warn">
+      <strong>Not finding your number?</strong> It means Bayo has not yet added you as an agent, or the number you typed doesn't match the one registered. Contact Bayo on WhatsApp: <strong>+234 814 507 3941</strong>
+    </div>
+  </div>
+
+  <!-- CH 3 -->
+  <div id="ch3" class="chapter">
+    <div class="ch-eyebrow purple">Chapter 03</div>
+    <h2 class="ch-title">New Agent Registration</h2>
+    <p class="ch-desc">If you are not yet registered, you can apply directly inside the app. Bayo reviews and approves you from his portal.</p>
+
+    <p>On the login screen, tap the <strong>New Agent?</strong> tab. A registration form will appear. Fill it in completely — all three sections are required.</p>
+
+    <h3 class="sub-title">Section 1 · Identity</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num purple">1</div>
+        <div class="step-body">
+          <strong>Tap the photo circle to take your photo</strong>
+          <span>A clear face photo is required for identity verification. Tap the camera circle or the "📸 Take / Upload Photo" button. You can use your front camera or gallery.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">2</div>
+        <div class="step-body">
+          <strong>Enter your Full Name</strong>
+          <span>As it appears on your bank account — this is what will go on your ID card.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">3</div>
+        <div class="step-body">
+          <strong>Enter your WhatsApp Number</strong>
+          <span>Local format is fine here (e.g. 08012345678). The app will convert it automatically.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">4</div>
+        <div class="step-body">
+          <strong>Select the State you will cover</strong>
+          <span>Choose the state where you will be visiting schools. All 36 states and FCT are listed.</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Section 2 · Bank Account for Commission</h3>
+    <p>Your 20% commission on every approved deal is paid directly into this account. Fill in all three bank fields accurately.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num purple">5</div>
+        <div class="step-body">
+          <strong>Select your Bank Name</strong>
+          <span>Choose from all major Nigerian banks — Access, GTBank, UBA, Zenith, Opay, Kuda, Moniepoint, and more.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">6</div>
+        <div class="step-body">
+          <strong>Enter your 10-digit Account Number (NUBAN)</strong>
+          <span>Must be exactly 10 digits. Numbers only.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">7</div>
+        <div class="step-body">
+          <strong>Enter your Account Name</strong>
+          <span>Type it exactly as it appears on your bank statement.</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Section 3 · How Did You Hear About Us?</h3>
+    <p>Type how you found out about Edu-BLOOM — e.g. "Friend referral", "NAPPS event", "Social media". This field is optional but helpful for Bayo.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num purple">8</div>
+        <div class="step-body">
+          <strong>Tap 📨 Submit Request</strong>
+          <span>Your request is saved directly into Bayo's portal. He gets a WhatsApp alert as backup. A green confirmation message will appear — you can close the app after this.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box purple">
+      <strong>What happens next?</strong> Bayo reviews your request in the portal, approves it, and an <strong>Edu-BLOOM Agent ID Card</strong> is automatically generated with your photo. He will contact you on WhatsApp within 24 hours.
+    </div>
+  </div>
+
+  <!-- CH 4 -->
+  <div id="ch4" class="chapter">
+    <div class="ch-eyebrow green">Chapter 04</div>
+    <h2 class="ch-title">Dashboard Overview</h2>
+    <p class="ch-desc">After login, the main app has four tabs at the bottom. Here's what each one does.</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🏠</div>
+        <strong>Home</strong>
+        <span>Your quick summary — total deals submitted, approved deals, pending deals, and total commission earned at a glance.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">➕</div>
+        <strong>New Deal</strong>
+        <span>The main work area. Everything for visiting a school — signboard scan, register counter, ledger scan, and deal submission — is here.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <strong>Deals</strong>
+        <span>A list of every deal you have submitted. Shows status: pending (yellow), approved (green), or rejected (red).</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💰</div>
+        <strong>Earnings</strong>
+        <span>A detailed ledger of your commission payments — which deals earned what, and the running total.</span>
+      </div>
+    </div>
+
+    <p>The header bar at the top shows your name, a coloured dot for your connection status (green = online, red = offline), and a sync indicator when data is being saved.</p>
+  </div>
+
+  <!-- CH 5 -->
+  <div id="ch5" class="chapter">
+    <div class="ch-eyebrow">Chapter 05</div>
+    <h2 class="ch-title">Section 1 — Scan School Signboard</h2>
+    <p class="ch-desc">Photograph the school signboard and the app fills in the school name, address, LGA, and state automatically.</p>
+
+    <p>This is the first thing to do when you arrive at a school. Tap the <strong>📸 Scan School Signboard</strong> button at the top of the New Deal screen.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Point your camera at the signboard</strong>
+          <span>The full board should be visible and the text should be legible. Good lighting helps a lot — avoid harsh shadows across the text.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Take the photo</strong>
+          <span>Tap the shutter button. You can also upload a photo from your gallery if you already took one.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Wait a few seconds</strong>
+          <span>The app sends the photo to the AI engine. You will see a "Reading signboard…" status message. This usually takes 3–8 seconds.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Review and correct the filled fields</strong>
+          <span>School Name, Address, LGA, and State are auto-filled from the signboard text. Tap any field to correct it if the AI made a mistake.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box blue">
+      <strong>OCR Cascade:</strong> The app tries three AI engines in order until one succeeds.
+      <div class="cascade" style="margin-top:0.6rem;">
+        <div class="cascade-node primary">AariNAT OCR</div>
+        <div class="cascade-arrow">→</div>
+        <div class="cascade-node secondary">Groq Vision</div>
+        <div class="cascade-arrow">→</div>
+        <div class="cascade-node tertiary">HuggingFace</div>
+        <div class="cascade-arrow">→</div>
+        <div class="cascade-node tertiary">OCR.space</div>
+      </div>
+      If all fail (very rare), fill in the school details manually — the form fields are always editable.
+    </div>
+  </div>
+
+  <!-- CH 6 -->
+  <div id="ch6" class="chapter">
+    <div class="ch-eyebrow">Chapter 06</div>
+    <h2 class="ch-title">Section 2 — Smart Register Counter</h2>
+    <p class="ch-desc">Count the school's students accurately — by photographing the register, or by pasting a list of names.</p>
+
+    <p>The Smart Register Counter lets you find out exactly how many students are enrolled, which determines the Premium Plan tier and your commission. There are two ways to use it.</p>
+
+    <h3 class="sub-title">Option A — Photograph the Register</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Tap "📷 Scan Register Photo"</strong>
+          <span>Your camera opens. Photograph the class register pages — multiple photos are supported, one per page.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Hold the phone steady over the page</strong>
+          <span>Good light and a straight angle give the best results. The app will warn you if the image is too blurry to read.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Wait for the count to appear</strong>
+          <span>The AI reads only student NAMES from the register (not fees or marks). The total count is shown below, and the correct plan tier is highlighted automatically.</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Option B — Paste Names (CSV or plain text)</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num green">1</div>
+        <div class="step-body">
+          <strong>Tap the text / paste area</strong>
+          <span>You can paste a list of student names separated by commas, new lines, or as a CSV file from another source.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">2</div>
+        <div class="step-body">
+          <strong>Tap Count</strong>
+          <span>The app parses the names and gives you a total count instantly — no AI needed for this method.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box green">
+      <strong>Important:</strong> This section counts students for <em>tier selection only</em>. It does NOT extract fees or payment status — that is what the Financial Ledger Scan (Section 3) is for.
+    </div>
+  </div>
+
+  <!-- CH 7 -->
+  <div id="ch7" class="chapter">
+    <div class="ch-eyebrow orange">Chapter 07</div>
+    <h2 class="ch-title">Section 3 — Financial Ledger Scan</h2>
+    <p class="ch-desc">Photograph the school fees ledger to see who has paid, who hasn't, and the outstanding fee total — class by class.</p>
+
+    <p>This is the most powerful feature of the app. A school's fees ledger lists every student alongside their payment status and amounts. Scanning it lets you show the Principal exactly how much money is outstanding — making your pitch far stronger.</p>
+
+    <div class="info-box orange">
+      <strong>What the app reads from the ledger:</strong> Student name · Payment status (PAID, PARTIAL, or UNCLEAR) · Term fees · Balance outstanding. It processes multiple pages at once and groups results by class.
+    </div>
+
+    <h3 class="sub-title">Scanning the Ledger</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num orange">1</div>
+        <div class="step-body">
+          <strong>Tap "📷 Add Ledger Page"</strong>
+          <span>Photograph one page of the fees ledger. You can add as many pages as needed — the app processes them all together.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">2</div>
+        <div class="step-body">
+          <strong>Keep each page straight and well-lit</strong>
+          <span>The app automatically corrects for slight angles (perspective correction) and removes blur, but extreme angles will reduce accuracy. Aim for a flat, overhead shot.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">3</div>
+        <div class="step-body">
+          <strong>Tap "📖 Read All Pages"</strong>
+          <span>The app processes every page one by one through the AI cascade. A live feed shows progress page by page. Pages with many students may take 10–15 seconds each.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">4</div>
+        <div class="step-body">
+          <strong>Review the grouped results</strong>
+          <span>Results are organised by class group. Each group shows total students, paid count, and outstanding amount. Any pages that failed to read are flagged — tap "Retry Failed Pages" to try again.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warn">
+      <strong>UNCLEAR status:</strong> When the AI cannot confidently read a student's payment status (e.g. handwriting is smudged), it marks them as UNCLEAR. These students are <em>not counted</em> as owing — only confirmed unpaid students appear in the outstanding total. This protects you from showing a falsely high figure to the Principal.
+    </div>
+  </div>
+
+  <!-- CH 8 -->
+  <div id="ch8" class="chapter">
+    <div class="ch-eyebrow">Chapter 08</div>
+    <h2 class="ch-title">School Details Form</h2>
+    <p class="ch-desc">After scanning, review and complete the school information before selecting a plan.</p>
+
+    <p>If you used the Signboard Scan in Section 1, most of these fields will already be filled in. Check them and correct anything that is wrong — the AI is accurate but not perfect.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>School Name</strong>
+          <span>Auto-filled from the signboard scan. Edit if needed — use the full official name.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Address</strong>
+          <span>The physical address of the school. Auto-filled from signboard if available.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>LGA</strong>
+          <span>Local Government Area. Auto-filled from signboard scan.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>State</strong>
+          <span>Auto-filled from signboard scan. Select from the dropdown if not detected.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Principal's Phone Number</strong>
+          <span>The school contact number. This is what Edu-BLOOM will use to send login credentials after approval.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CH 9 -->
+  <div id="ch9" class="chapter">
+    <div class="ch-eyebrow purple">Chapter 09</div>
+    <h2 class="ch-title">Premium Plans &amp; Pricing</h2>
+    <p class="ch-desc">All Edu-BLOOM plans are now Premium. Select the plan that matches the school's student count.</p>
+
+    <p>As of August 2026, Edu-BLOOM offers one product: the <strong>✨ Premium Experience</strong>. The plan you select is determined purely by how many students the school has — the price scales with size.</p>
+
+    <table class="tier-table">
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Student Count</th>
+          <th>Term Fee</th>
+          <th>Your Commission</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>✨ Premium <span class="premium-badge">1–50</span></td>
+          <td>1 – 50 students</td>
+          <td class="price">₦15,000</td>
+          <td class="comm">₦3,000</td>
+        </tr>
+        <tr>
+          <td>✨ Premium <span class="premium-badge">51–100</span></td>
+          <td>51 – 100 students</td>
+          <td class="price">₦30,000</td>
+          <td class="comm">₦6,000</td>
+        </tr>
+        <tr>
+          <td>✨ Premium <span class="premium-badge">101–200</span></td>
+          <td>101 – 200 students</td>
+          <td class="price">₦52,500</td>
+          <td class="comm">₦10,500</td>
+        </tr>
+        <tr>
+          <td>✨ Premium <span class="premium-badge">201–350</span></td>
+          <td>201 – 350 students</td>
+          <td class="price">₦82,500</td>
+          <td class="comm">₦16,500</td>
+        </tr>
+        <tr>
+          <td>✨ Premium <span class="premium-badge">351+</span></td>
+          <td>351+ students</td>
+          <td class="price">₦112,500</td>
+          <td class="comm">₦22,500</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-box purple">
+      <strong>How to select:</strong> Tap the plan card that matches the count from your register scan. The card turns blue with a checkmark when selected. Your commission preview updates instantly below the selection.
+    </div>
+
+    <div class="info-box green">
+      <strong>Commission:</strong> 20% of every term fee, paid directly to your registered bank account after Bayo approves the deal. No re-typing needed — the deal is ready to activate from the moment it is approved.
+    </div>
+  </div>
+
+  <!-- CH 10 -->
+  <div id="ch10" class="chapter">
+    <div class="ch-eyebrow orange">Chapter 10</div>
+    <h2 class="ch-title">Show Principal Panel</h2>
+    <p class="ch-desc">A full-screen pitch screen you show the Principal before submitting the deal.</p>
+
+    <p>Once you have filled in the school details, counted the students, and selected a plan, tap the <strong>"Show Principal"</strong> button. This opens a clean, full-screen panel designed to be turned toward the Principal and shown on your phone.</p>
+
+    <p>The panel displays:</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num orange">→</div>
+        <div class="step-body">
+          <strong>School name and location</strong>
+          <span>Confirms to the Principal that the information captured is correct.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">→</div>
+        <div class="step-body">
+          <strong>Total student headcount</strong>
+          <span>From your register scan — shows the Principal you have a real figure, not a guess.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">→</div>
+        <div class="step-body">
+          <strong>Outstanding fees (if ledger was scanned)</strong>
+          <span>Class-by-class breakdown of how much money the school is owed. This is the strongest part of your pitch — the Principal can see the real figure instantly.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">→</div>
+        <div class="step-body">
+          <strong>Selected Premium Plan</strong>
+          <span>Shows "✨ Premium Plan Selected" with the plan tier and term fee.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num orange">→</div>
+        <div class="step-body">
+          <strong>The Edu-BLOOM slogan</strong>
+          <span>"GIVE YOUR SCHOOL THE PREMIUM EXPERIENCE" — a strong close for the conversation.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box blue">
+      After the Principal agrees, tap <strong>Close</strong> on the Show Principal panel to return to the deal form and submit.
+    </div>
+  </div>
+
+  <!-- CH 11 -->
+  <div id="ch11" class="chapter">
+    <div class="ch-eyebrow green">Chapter 11</div>
+    <h2 class="ch-title">Submitting a Deal</h2>
+    <p class="ch-desc">The final step — sending the completed deal to Bayo's portal for approval.</p>
+
+    <p>Once everything is filled in — school details, student count, plan selected, and the Principal has seen the pitch — you are ready to submit.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num green">1</div>
+        <div class="step-body">
+          <strong>Double-check all fields</strong>
+          <span>School name, address, LGA, state, Principal's phone number, and selected plan. Everything in the deal is what Bayo will use to set up the school account.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">2</div>
+        <div class="step-body">
+          <strong>Tap "Submit Deal"</strong>
+          <span>The deal is sent to Firestore (the database) and appears immediately in Bayo's portal as a pending deal.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">3</div>
+        <div class="step-body">
+          <strong>Wait for the confirmation</strong>
+          <span>A green confirmation message appears with your deal reference number. The deal also appears in your Deals tab with a "Pending" badge.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">4</div>
+        <div class="step-body">
+          <strong>Bayo reviews and approves</strong>
+          <span>Once approved, the deal badge turns green and the commission appears in your Earnings tab. The school receives their login credentials via WhatsApp.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box green">
+      <strong>No re-typing needed.</strong> Everything captured by the scans and form goes directly into the deal. The school gets the full Premium Experience from day one.
+    </div>
+  </div>
+
+  <!-- CH 12 -->
+  <div id="ch12" class="chapter">
+    <div class="ch-eyebrow">Chapter 12</div>
+    <h2 class="ch-title">My Deals</h2>
+    <p class="ch-desc">Track every deal you have submitted and see its current status.</p>
+
+    <p>Tap the <strong>Deals</strong> tab at the bottom to see your full deal history. Each deal is shown as a card with the school name, date submitted, plan, and a coloured status chip.</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🟡</div>
+        <strong>Pending</strong>
+        <span>The deal has been submitted and is waiting for Bayo to review and approve it.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🟢</div>
+        <strong>Approved</strong>
+        <span>Bayo has approved the deal. The school is now active on Edu-BLOOM and your commission has been recorded.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔴</div>
+        <strong>Rejected</strong>
+        <span>The deal was rejected. Bayo may contact you on WhatsApp to explain. Rejected deals are shown at 60% opacity.</span>
+      </div>
+    </div>
+
+    <p>The list updates in real time — if Bayo approves a deal while you are looking at this screen, the badge will change from yellow to green automatically.</p>
+  </div>
+
+  <!-- CH 13 -->
+  <div id="ch13" class="chapter">
+    <div class="ch-eyebrow green">Chapter 13</div>
+    <h2 class="ch-title">My Earnings</h2>
+    <p class="ch-desc">A full record of every commission payment against your name.</p>
+
+    <p>Tap the <strong>Earnings</strong> tab to see your ledger. This shows every deal that has earned you a commission, with the deal name, term fee, your percentage, and the amount owed or paid.</p>
+
+    <p>The top of the screen shows summary stats:</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">💰</div>
+        <strong>Total Earned</strong>
+        <span>Sum of all commission payments recorded against your account to date.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⏳</div>
+        <strong>Pending</strong>
+        <span>Commission on deals that are approved but not yet paid out to your bank account.</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✅</div>
+        <strong>Paid Out</strong>
+        <span>Commission that has already been transferred to your registered bank account.</span>
+      </div>
+    </div>
+
+    <div class="info-box green">
+      <strong>Commission rate:</strong> 20% on every approved deal, calculated from the term fee of the selected plan. This is set by Bayo in the portal and cannot be changed from the agent app.
+    </div>
+  </div>
+
+  <!-- CH 14 -->
+  <div id="ch14" class="chapter">
+    <div class="ch-eyebrow warn">Chapter 14</div>
+    <h2 class="ch-title">Tips &amp; Troubleshooting</h2>
+    <p class="ch-desc">Common issues and how to fix them quickly in the field.</p>
+
+    <div class="trouble-item">
+      <div class="trouble-q">📵 The app says "Firebase permission error" when I log in</div>
+      <div class="trouble-a">This is a server-side issue, not your fault. Contact Bayo immediately — the Firestore security rules may need to be updated. <strong>Nothing you do on your phone will fix this.</strong></div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">📷 The signboard scan came back with the wrong name or address</div>
+      <div class="trouble-a">The AI is accurate but not perfect on poorly lit or distant signs. <strong>Simply tap the field and correct it manually</strong> — the form is always editable regardless of what the scan found.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">⏳ The OCR is taking very long or showing "Rate limit"</div>
+      <div class="trouble-a">The AI engines have usage limits. When one is full, the app automatically waits and tries the next one in the cascade. <strong>Do not close the app</strong> — just wait. It will complete on its own.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">📖 Some ledger pages say "Failed" in the results</div>
+      <div class="trouble-a">This can happen with very blurry, dark, or heavily tilted photos. Tap <strong>"Retry Failed Pages"</strong> — the app retries only the failed pages, not the ones that already worked. If it fails again, retake the photo of that specific page in better light.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">🔢 The page counter on the ledger shows "6/5" or wrong numbers</div>
+      <div class="trouble-a">This was a known display bug — it has been fixed as of July 2026. If you see it, clear your browser cache (Settings → Clear browsing data) and reload the app to get the latest version.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">🎨 The app looks light/pastel instead of dark navy</div>
+      <div class="trouble-a">A stale cached version is loading. <strong>Clear site data</strong> for agent.edubloom.com.ng in your browser settings, then reload. The dark navy theme is correct.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">📜 The New Agent registration page won't scroll back up</div>
+      <div class="trouble-a">This has been fixed (August 17, 2026). <strong>Clear your browser cache</strong> or use incognito mode to force the updated stylesheet to load — the page will scroll freely in both directions.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">📤 I submitted a deal but it's not showing up in Bayo's portal</div>
+      <div class="trouble-a">If you were offline when you submitted, the deal may be queued for sync. Wait until you are back on a good connection — the app will sync automatically. If you had a signal when submitting and still cannot see it, contact Bayo directly.</div>
+    </div>
+
+    <div class="trouble-item">
+      <div class="trouble-q">💰 My commission figure looks wrong or is missing</div>
+      <div class="trouble-a">Commission is recorded by Bayo's portal when he approves a deal. If the deal is still "Pending" it will not yet show in Earnings. If it is "Approved" and the figure is missing, contact Bayo on <strong>+234 814 507 3941</strong>.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <h3 class="sub-title">Best Practices in the Field</h3>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">💡</div>
+        <div class="step-body">
+          <strong>Scan the signboard first, always</strong>
+          <span>It fills in all the school details in one shot. Starting with the scan saves you from typing a long school name manually.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">💡</div>
+        <div class="step-body">
+          <strong>Ask to see the fees ledger</strong>
+          <span>Principals who see the outstanding fees figure are much more likely to sign up. Ask politely — it's a simple record they keep at the school.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">💡</div>
+        <div class="step-body">
+          <strong>Use Show Principal before submitting</strong>
+          <span>Let the Principal confirm all the details are correct before you submit. This avoids rejection due to wrong school information.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">💡</div>
+        <div class="step-body">
+          <strong>Stay on a good network during submission</strong>
+          <span>The deal submission writes directly to the database. A dropped connection mid-submit can create a stuck deal. Wait for the green confirmation before leaving the school.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end .content -->
+
+<!-- FOOTER -->
+<div class="footer">
+  <strong>Edu-BLOOM Agent App Manual</strong> · August 2026<br>
+  Maintained by Bayo (AariNAT Company Limited) · agent.edubloom.com.ng<br>
+  <span style="color:#3b5470;">For support contact Bayo on WhatsApp: +234 814 507 3941</span>
+</div>
+
+</body>
+</html>
