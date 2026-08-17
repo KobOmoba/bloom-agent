@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#080f1a">
 <title>Edu-BLOOM · Agent App</title>
-<link rel="stylesheet" href="style.css?v=20260817-scrollfix">
+<link rel="stylesheet" href="style.css?v=20260817-manual">
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <link rel="manifest" href="manifest.json">
@@ -99,6 +99,16 @@
         <button class="btn-money" onclick="submitAgentRequest()" id="reg-submit-btn" style="width:100%;">📨 Submit Registration Request</button>
         <div id="reg-err" style="color:#ef4444;font-size:0.78rem;margin-top:0.4rem;display:none;"></div>
         <p style="font-size:0.72rem;color:var(--sub);margin-top:0.65rem;text-align:center;line-height:1.6;">Request goes directly into Bayo's admin portal.<br>You'll be contacted on WhatsApp within 24 hours.</p>
+
+        <!-- MANUAL DOWNLOAD BANNER -->
+        <a href="AGENT_MANUAL.html" target="_blank" style="display:flex;align-items:center;gap:10px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:11px;padding:0.75rem 0.9rem;margin-top:0.9rem;text-decoration:none;">
+          <span style="font-size:1.4rem;flex-shrink:0;">📖</span>
+          <div>
+            <div style="font-size:0.82rem;font-weight:700;color:#93c5fd;">Download the Agent Manual</div>
+            <div style="font-size:0.72rem;color:var(--sub);margin-top:2px;line-height:1.5;">Step-by-step guide to every feature — signboard scan, register counter, ledger scan, deals, and earnings. Read before your first school visit.</div>
+          </div>
+          <span style="font-size:0.8rem;color:var(--sub);flex-shrink:0;">↗</span>
+        </a>
       </div>
     </div>
     <div id="login-err" class="err-box"></div>
@@ -455,6 +465,17 @@
     </section>
     <section id="sec-settings" class="sec">
   <div id="settings-content"></div>
+
+  <!-- AGENT MANUAL CARD -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.1rem;margin:0.75rem 0;">
+    <div style="font-size:0.68rem;font-weight:800;color:var(--sub);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.6rem;">📚 Agent Manual</div>
+    <div style="font-size:0.83rem;color:var(--sub);margin-bottom:0.75rem;line-height:1.6;">
+      The complete step-by-step guide to the Edu-BLOOM Agent App — 14 chapters covering every feature, with tips and troubleshooting.
+    </div>
+    <a href="AGENT_MANUAL.html" target="_blank" style="text-decoration:none;">
+      <button style="background:var(--brand);color:white;border:none;border-radius:10px;padding:0.75rem;font-weight:700;font-size:0.88rem;cursor:pointer;width:100%;font-family:'Syne',sans-serif;">📖 Open &amp; Download Manual</button>
+    </a>
+  </div>
 </section>
 
   </main>
