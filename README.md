@@ -633,6 +633,48 @@ The hyphen is now included. Logo baseline raised from y=55 to y=57 to accommodat
 
 ---
 
+
+---
+
+## 2026-08-17 — New Agent Page Scroll Fix + Agent Manual Published
+
+### Scroll fix — `style.css` (`03a58e3`)
+**Problem:** The New Agent registration form is taller than the viewport. The `.login` container
+was `align-items:center` with no `overflow-y`, so content overflowed both above and below the
+screen. Agents could scroll down into the form but could NOT scroll back up — the top was cut off
+with no way to reach it.
+
+**Fix (2 lines changed):**
+- `.login` → added `overflow-y:auto` + changed `align-items:center` to `align-items:flex-start`
+- `.login-box` → added `margin:auto` (keeps the short login form vertically centred via auto margins,
+  allows scroll when register form is taller than the viewport)
+
+**Cache-bust** → `style.css?v=20260817-scrollfix` in `index.html` (`cc7c0d6`)
+
+### Agent Manual — `AGENT_MANUAL.html` (`274915a`)
+Full 14-chapter user manual for the Edu-BLOOM Agent App committed to this repo.
+Written in plain English, zero technical jargon. Covers every feature:
+1. What Is This App?
+2. Logging In
+3. New Agent Registration
+4. Dashboard Overview
+5. Section 1 — Signboard Scan
+6. Section 2 — Smart Register Counter
+7. Section 3 — Financial Ledger Scan
+8. School Details Form
+9. Premium Plans & Pricing (all 5 tiers, commission table)
+10. Show Principal Panel
+11. Submitting a Deal
+12. My Deals
+13. My Earnings
+14. Tips & Troubleshooting (9 known issues documented)
+
+Styled to match the dark navy app theme. Live at:
+https://kobomoba.github.io/bloom-agent/AGENT_MANUAL.html
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+
+
 ## 2026-08-16 — Edu-BLOOM User Manual Released
 
 A 32-page user manual for the Edu-BLOOM school app has been written and committed to
