@@ -636,6 +636,29 @@ The hyphen is now included. Logo baseline raised from y=55 to y=57 to accommodat
 
 ---
 
+
+---
+
+## 2026-08-17 (2) — Agent Manual Link Added to App
+
+**Two entry points added to `index.html` (`a005bd7`):**
+
+**1 · New Agent registration form** — A blue info banner appears below the Submit button:
+- Icon, heading "Download the Agent Manual", and a short description of what it covers
+- Tapping opens `AGENT_MANUAL.html` in a new tab
+- Visible to anyone who hasn't registered yet — the right moment to discover the manual
+
+**2 · Settings tab (⚙️)** — A card at the bottom of the Settings section with:
+- Section label "📚 Agent Manual"
+- One-line description
+- "📖 Open & Download Manual" button — also opens `AGENT_MANUAL.html` in new tab
+- Accessible to all logged-in agents at any time
+
+**Cache-bust:** `style.css?v=20260817-manual`
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+
+
 ## 2026-08-17 — New Agent Page Scroll Fix + Agent Manual Published
 
 ### Scroll fix — `style.css` (`03a58e3`)
