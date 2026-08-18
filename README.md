@@ -1,3 +1,70 @@
+
+---
+
+## 2026-08-18 — Agent Deactivation System
+
+### Problem
+No way to block access or stop commission when an agent resigns, is dismissed, or commits fraud.
+The old "Remove" button permanently deleted the agent record — no audit trail, and the agent
+could still log in if they had the app cached on their phone.
+
+### What was built
+
+**`bloom-portal/portal_app.js` (commit `8aee6e26`):**
+
+`deactivateAgent(id, name)` — replaces the old hard-delete flow:
+- Bayo is prompted to enter a reason: `resigned`, `dismissed`, or `fraud`
+- Writes to `admin_agents/{id}`: `{active: false, status: 'deactivated', deactivatedAt, deactivationReason}`
+- **If fraud:** queries all pending deals by that agent → sets `status: 'flagged_fraud'` + `fraudNote` on each, using a Firestore batch write. Alert shows how many deals were flagged.
+- Agent card immediately shows a 🚫 DEACTIVATED / 🚨 FRAUD badge, dimmed opacity, and red/amber border
+- Card action buttons replaced with "✅ Reactivate" and "🗑️ Delete Record" only
+
+`reactivateAgent(id, name)`:
+- Sets `active: true`, clears `deactivatedAt` and `deactivationReason` via `FieldValue.delete()`
+- Restores all normal action buttons on the card
+
+`deleteAgent(id, name)` — now a permanent hard-delete (kept for genuine record removal), with a
+warning prompt suggesting Deactivate instead.
+
+Commission gate (in `confirmApproval()`):
+- Before writing the commission ledger entry, reads the agent's Firestore doc
+- If `active === false` → skips commission write entirely + logs "Commission skipped — agent deactivated"
+- Prevents any future deal approved under a deactivated agent from earning commission
+
+Performance table: status column now shows Active / Resigned / Dismissed / 🚨 FRAUD chip.
+
+**`bloom-agent/app.js` (commit `6b9c94f0`):**
+
+Three login gates — all three paths an agent can take to get into the app are now blocked:
+
+**Gate 1 — First-time login (no cache):**
+After Firestore lookup, checks `agent.active === false` before calling `startApp()`.
+Shows reason-specific message (fraud vs dismissed vs resigned) and halts.
+
+**Gate 2 — Cached login (phone already known):**
+Before trusting the localStorage cache, checks `cachedAgent.active === false`.
+Clears the cache and shows the deactivation message — no way in even offline.
+
+**Gate 3 — Background refresh (already inside app):**
+`refreshAgentBackground()` now checks if the freshly fetched profile has `active === false`.
+If so: clears localStorage, sets `agent = null`, hides the main app, shows the login screen
+with the deactivation message. This is the key gate — it means if Bayo deactivates someone
+while they are actively using the app, the next time their app refreshes from Firestore
+(every login attempt) they are immediately signed out.
+
+### Deactivation messages shown to agents
+| Reason | Message |
+|---|---|
+| resigned | 🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941 |
+| dismissed | 🚫 Your agent account has been deactivated. Contact Bayo: +234 814 507 3941 |
+| fraud | 🚨 Your account has been suspended due to a fraud report. Contact AariNAT: +234 814 507 3941 |
+
+### Cache-busters bumped
+- `bloom-agent/index.html`: `app.js?v=20260818-deactivate` (commit `239f635d`)
+- `bloom-portal/index.html`: `portal_app.js?v=20260818-deactivate` (commit `66d68d94`)
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+
 # ⚠️ STANDING RULE — READ BEFORE TOUCHING ANYTHING
 
 This file is the **sole README for every Edu-BLOOM production app**.
