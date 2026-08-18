@@ -99,8 +99,19 @@ async function doLogin(){
       const cachedAgent = JSON.parse(cached);
       const cachedPhone = normalizePhone(cachedAgent.phone || '');
       if(cachedPhone === phone || cachedAgent.phone === localFmt || cachedPhone === localFmt){
+        // Access gate — check cached active status
+        if(cachedAgent.active === false){
+          localStorage.removeItem('ag_agent');
+          const r = cachedAgent.deactivationReason || 'deactivated';
+          const msg = r === 'fraud'
+            ? '🚨 Your account has been suspended. Contact AariNAT: +234 814 507 3941'
+            : '🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941';
+          showErr(msg);
+          btn.textContent='▶ Login'; btn.disabled=false;
+          return;
+        }
         agent = cachedAgent;
-        // Silently refresh from Firestore in background if online
+        // Silently refresh from Firestore in background — will force logout if deactivated
         if(navigator.onLine && db){
           refreshAgentBackground(cachedAgent.id, phone, localFmt).catch(()=>{});
         }
@@ -136,6 +147,19 @@ async function doLogin(){
     }
     const doc = allDocs[0];
     agent = { id:doc.id, ...doc.data() };
+
+    // ── Access gate: block deactivated agents ──────────────────────────────
+    if(agent.active === false){
+      const r = agent.deactivationReason || 'deactivated';
+      const msg = r === 'fraud'
+        ? '🚨 Your account has been suspended due to a fraud report. Contact AariNAT: +234 814 507 3941'
+        : r === 'dismissed'
+        ? '🚫 Your agent account has been deactivated. Contact Bayo: +234 814 507 3941'
+        : '🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941';
+      showErr(msg);
+      btn.textContent='▶ Login'; btn.disabled=false; return;
+    }
+
     localStorage.setItem('ag_agent', JSON.stringify(agent));
     startApp();
   } catch(e){
@@ -166,6 +190,24 @@ async function refreshAgentBackground(agentId, phone, localFmt){
       doc = d;
     }
     const fresh = { id:doc.id, ...doc.data() };
+
+    // If agent was deactivated since last login — force them out immediately
+    if(fresh.active === false){
+      localStorage.removeItem('ag_agent');
+      agent = null;
+      const r = fresh.deactivationReason || 'deactivated';
+      const msg = r === 'fraud'
+        ? '🚨 Your account has been suspended. Contact AariNAT: +234 814 507 3941'
+        : '🚫 Your agent access has been removed. Contact Bayo: +234 814 507 3941';
+      // Return to login screen with message
+      const appEl = document.getElementById('app');
+      const loginEl = document.querySelector('.login');
+      if(appEl) appEl.style.display = 'none';
+      if(loginEl) loginEl.style.display = 'flex';
+      showErr(msg);
+      return;
+    }
+
     localStorage.setItem('ag_agent', JSON.stringify(fresh));
     if(agent && agent.id === fresh.id) agent = fresh;
   }catch(e){ /* silent — cached profile is valid */ }
