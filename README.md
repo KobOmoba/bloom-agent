@@ -1,3 +1,89 @@
+---
+
+## 2026-08-18 — Teaching Tools: Lesson Note Generator + Question Generator
+
+### Context
+Federal Government of Nigeria is rolling out a new curriculum across primary and secondary schools.
+Teachers requested two tools inside the school app: (1) AI-generated lesson notes, and (2) CA and exam question generation with full answer keys.
+
+### What was built
+
+**Built in `school-bloom-v2` first (commits `248a040`, `24657a0`), then ported verbatim to `School-Bloom` (commits `e8581af`, `6dd8fb9`).**
+
+Both tools are accessible from two new nav tabs: **📖 Lessons** and **❓ Questions**.
+
+---
+
+#### 📖 Lesson Note Generator (`sec-lessons`)
+
+**Inputs:**
+- School Level: Primary (Basic 1–6) / Junior Secondary (JSS 1–3) / Senior Secondary (SS 1–3)
+- Class (dynamic — updates when level changes)
+- Subject (dynamic — full FG curriculum subject list per level)
+- Topic (required) + Sub-Topic (optional)
+- Duration: 30 / 40 / 45 / 60 / 80 minutes
+- Term: 1st / 2nd / 3rd + Week: 1–13
+
+**Output — full NTI/NCCE 5-step lesson note:**
+- School name, Subject, Class, Topic, Sub-Topic, Duration, Term, Week, Date and Time fields
+- Behavioural Objectives (4–5 action-verb objectives)
+- Entry Behaviour / Previous Knowledge
+- Instructional Materials (Nigeria-specific, classroom-realistic)
+- Reference Books (approved Nigerian textbooks)
+- Step I: Introduction (5 min)
+- Step II: Presentation / Development (proportional to duration)
+- Step III: Further Development
+- Step IV: Application / Class Activity
+- Step V: Evaluation (5 evaluation questions)
+- Conclusion / Summary
+- Assignment
+
+**Actions:** 🖨️ Print (opens print-ready page) | 📋 Copy to clipboard
+
+---
+
+#### ❓ Question Generator (`sec-questions`)
+
+**Inputs:**
+- School Level, Class, Subject (same dynamic selectors as Lesson Notes)
+- Topic(s) — free text, can be multiple topics
+- Exam Type: 1st CA / 2nd CA / Mid-Term / End of Term / Mock / Assignment / Weekly Quiz
+- Total Marks
+- Question counts per type (each independently settable):
+  - Objective / MCQ (default: 20)
+  - Theory / Essay (default: 5)
+  - Short Answer (default: 0)
+  - Fill in the Blank (default: 0)
+
+**Output — two-part document:**
+1. **Question Paper** — properly formatted Nigerian exam paper with school name, subject, class, date, time, total marks, instructions, section headers, and all questions numbered correctly
+2. **Answer Key / Marking Scheme** — complete answers for every question (MCQ answer letters, fill-in-blank words, short answer model sentences, theory model answers with marks allocation per point)
+
+**Actions:** 🖨️ Print Questions only | 🖨️ Print with Answer Key | 📋 Copy All | 👁 Toggle Answer Key visibility
+
+---
+
+#### Curriculum Subject Maps (`CURRICULUM` constant)
+
+Three levels, each with a complete subject list matching the FG Nigeria curriculum:
+
+- **Primary (Basic 1–6):** 17 subjects including English, Maths, Basic Science, Social Studies, CCA, Civic Education, PHE, Agric, ICT, CRS, IRS, Yoruba/Hausa/Igbo, French, Quantitative and Verbal Reasoning
+- **JSS 1–3:** 19 subjects including BST, Business Studies, Home Economics, Pre-Vocational Studies, Arabic, CRK, IRK
+- **SS 1–3:** 30 subjects covering Sciences, Commercial, Arts, and vocational electives
+
+#### Groq Integration
+Both tools call Groq (`qwen/qwen3.6-27b`, `max_tokens:8192`, `reasoning_effort:'none'`) via `_callGroqTeach()`.
+Key is fetched once from Firestore `public_ocr_keys/main` and cached in `_groqKey`.
+Same key used by OCR — no new key needed.
+
+#### Layout
+Two-column grid (form left, output right). Collapses to single column on screens under 640px.
+
+### Cache-busters bumped
+- `School-Bloom/index.html`: `app.js?v=20260818-teaching`, `style.css?v=20260818-teaching`
+
+**Requested by:** Teachers (via Bayo). Implemented by Claude (Anthropic).
+
 
 ---
 
