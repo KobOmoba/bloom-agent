@@ -1,5 +1,64 @@
 ---
 
+## 2026-08-18 — Fee Access Gate (Proprietor) + Payment Receipt Confirmation Flow
+
+### Rules clarified by Bayo
+- Only **Bursar**, **Principal**, and **Proprietor** can see student fee information, the Revenue section, and payment receipts.
+- **Class Teacher** and **Subject Teacher** are fully blocked from all fee-related content — fee badges, Revenue tab, payment history. Non-negotiable.
+
+### Change 1 — Proprietor role added (`School-Bloom/app.js`, commit `43f07c45`)
+
+`ROLE_TABS`: Added `'Proprietor': null` (full access, same as Principal).
+`ROLE_DEFAULT_TAB`: `'Proprietor': 'revenue'` — lands on Revenue on login.
+`ROLE_NORMALISE`: `'proprietor', 'owner', 'director', 'proprietress', 'chairman'` all map to `Proprietor`.
+`canSeeFees()`: now returns true for `['Principal', 'Bursar', 'Proprietor']` only.
+Staff role dropdown (edit modal + add form): Proprietor added as a selectable role.
+
+### Change 2 — WhatsApp reminder carries payment confirmation link (`sendReminder()`)
+
+New function `_buildPayConfirmLink(s, owe)` builds a URL for `pay-confirm.html` with all params:
+`school` (schoolId), `sid` (student ID), `sn` (student name), `amt` (amount owed),
+`term`, `bank`, `acct`, `acctname`, `schoolname`.
+
+The WhatsApp message now includes:
+- Bank transfer details (as before)
+- A divider line and: "✅ After payment, tap the link below:"
+- The full `pay-confirm.html` URL
+- "The link lets you upload your bank debit alert or transfer receipt directly to the school."
+
+### Change 3 — `pay-confirm.html` (new file, commit `ac18d5c4`)
+
+A standalone dark-themed page served at `school.edubloom.com.ng/pay-confirm.html`.
+
+**Step 1 — Payment details screen:**
+- Reads all params from URL, shows: student name, amount owed, term, full bank account details with reference = student name.
+- "✅ I Have Paid — Upload Receipt" button.
+
+**Step 2 — Receipt upload form:**
+- Parent name (required), phone number, receipt photo upload (required).
+- Image is compressed to max 900px JPEG (75% quality) client-side before upload.
+- "📨 Submit Receipt to School" writes to Firestore: `schools/{schoolId}/payment_receipts/{auto-id}` with: `studentId`, `studentName`, `amount`, `term`, `parentName`, `parentPhone`, `receiptImage` (base64), `submittedAt`, `status: 'pending'`.
+
+**Step 3 — Confirmation screen:** "Receipt Submitted! The school will verify and update your ward's record."
+
+### Change 4 — Receipt review in Revenue section
+
+**Firestore listener** `_startReceiptListener()` subscribes to `schools/{schoolId}/payment_receipts` where `status == 'pending'`. Called in `startApp()` for Bursar/Principal/Proprietor only. Real-time — updates instantly when a parent submits.
+
+**Nav badge** `#receipt-badge`: amber counter on the Revenue nav button showing number of pending receipts. Hidden when zero.
+
+**`_renderReceiptSection()`**: Renders at the top of the Revenue section. Shows each pending receipt as a card with:
+- Student name, amount, term, parent name, submission date
+- Receipt image thumbnail (tap to open full-size in new tab)
+- "✅ Approve & Mark Paid" — adds amount to `student.paid`, writes to `paymentHistory`, marks receipt `approved` in Firestore
+- "❌ Reject" — prompts for optional reason, marks receipt `rejected` in Firestore
+
+### Cache-buster bumped
+`School-Bloom/index.html`: `app.js?v=20260818-receipts` (commit `97c894e4`)
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+---
+
 ## 2026-08-18 (hotfix) — Portal Login Broken: SQ.push Syntax Error
 
 **Root cause:** During the GroqRotator multi-key patch, the 4 extra Groq key spreads were appended AFTER the closing `})` of the `SQ.push` call in `saveSettings()`, making the line syntactically invalid and preventing `portal_app.js` from loading at all — breaking login entirely.
