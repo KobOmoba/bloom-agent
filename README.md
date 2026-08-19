@@ -1,5 +1,62 @@
 ---
 
+## 2026-08-18 — GroqRotator: Multi-Key Round-Robin API Rotation
+
+### Problem
+Every feature — signboard scan, register OCR, ledger scan, score sheets, fee ledger, lesson notes, question generator — shared a single Groq API key. When two features ran simultaneously they both hit the same free-tier rate limit bucket. The existing logic would wait (Retry-After) on the one key, stalling the user.
+
+### Solution
+`GroqRotator` — a 170-line singleton module injected identically into every app that touches Groq. Supports up to 5 keys rotating round-robin. On a 429 the rate-limited key is cooled exactly by its `Retry-After` header and the next key is tried immediately — no waiting at all when a second key is available.
+
+### How it works
+- **Key loading:** reads `groqApiKey`, `groqApiKey2`, `groqApiKey3`, `groqApiKey4`, `groqApiKey5` from `public_ocr_keys/main` in Firestore (+ `groqKeys` array for future-compat). Single Firestore read, result cached for the session.
+- **Round-robin pick:** `_pick()` starts from an incrementing pointer and scans forward, skipping any key whose cooldown hasn't expired. Returns the first ready key + `wait:0`. If all keys are cooling, returns the soonest-waking key + exact `wait` ms.
+- **429 handling:** `_setCooldown(key, header)` sets `_cd[key] = now + retryAfterSecs * 1000` (clamped 5–120 s). Caller loop continues to `_pick()` for the next key immediately.
+- **Proactive buffer:** when `x-ratelimit-remaining-requests < 2`, puts an 8-second buffer on that key so the next call goes elsewhere before the hard limit hits.
+- **Two call surfaces:** `GroqRotator.vision(prompt, base64, mime, opts)` for all image calls; `GroqRotator.text(prompt, systemMsg, opts)` for lesson notes, question generator, finance AI.
+- **Backward compat:** first key is still written to `window.GROQ_API_KEY` and `localStorage` so any legacy `getGroqKey()` callers continue to work.
+
+### Files changed (7 commits)
+
+**`bloom-agent/app.js` (`899951f`):**
+- `_fetchGroqKeyFromFirestore()` → now calls `GroqRotator.reload()` only
+- `_callGroqSignboardVision()` → `GroqRotator.vision()` (no more single-key fetch with AbortController)
+- `groqVisionOCR()` → `GroqRotator.vision()` (register OCR)
+- Ledger `groqKey` check → `GroqRotator.keyCount() > 0`
+- `GroqRotator` module injected after `_fetchGroqKeyFromFirestore`
+
+**`School-Bloom/app.js` (`cbf4495`):**
+- `_fetchGroqKeyFromFirestore()` → `GroqRotator.reload()`
+- `groqVisionOCR()` → `GroqRotator.vision()`
+- `_groqScoreOCR()` → `GroqRotator.vision()` (score sheet OCR)
+- `_getFeeGroqKey()` → returns sentinel, `GroqRotator.reload()` called
+- `_callGroqGenericVision()` → `GroqRotator.vision()` (fee scan generic)
+- `_callGroqFeeVision()` → `GroqRotator.vision()` (fee ledger scan)
+- Both `_getGroqKey()` + `_callGroqTeach()` pairs (teaching tools — 2 duplicates) → `GroqRotator.text()`
+
+**`school-bloom-v2/app.js` (`5c696c8`):** `_callGroqTeach()` → `GroqRotator.text()`
+
+**`bloom-portal/portal_app.js` (`d4abc17`):**
+- `syncOcrKeysToPublic()` now writes `groqApiKey2…5` + `groqKeys[]` array + `activeKeyCount` to `public_ocr_keys/main`
+- `saveSettings()` reads and saves `s-groq-2` through `s-groq-5` inputs
+- `loadSettings()` populates all 5 masked fields + shows active key count chip
+
+**`bloom-portal/index.html` (`c7f9529`):** Settings expanded from 1 Groq key field to 5 labeled fields (Key 1–5) with active-key count badge and rotation explanation note.
+
+**Cache-busters:** `app.js?v=20260818-rotator` on `bloom-agent` and `School-Bloom`.
+
+### How Bayo adds more keys
+1. Go to **Groq Console → API Keys → Create new key** (free account, takes 30 seconds)
+2. Paste the `gsk_…` key into Key 2 (or 3, 4, 5) in Portal → Settings
+3. Tap **Save Settings** then **Sync Keys to Apps**
+4. Done — all apps immediately rotate across both keys
+
+### Effect
+With N keys, effective throughput is N× before any waiting occurs. With 3 keys on the free tier, the system can run 3 concurrent Groq requests without any rate-limit collision.
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+---
+
 ## 2026-08-18 — Teaching Tools: Lesson Note Generator + Question Generator
 
 ### Context
