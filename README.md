@@ -285,50 +285,133 @@ If you are about to write something in a repo README that belongs in this file, 
 | `schools` | school app + portal | school app + portal | Open (needs full auth redesign — deferred) |
 | `public_ocr_keys/main` | agent + school apps | portal (syncOcrKeysToPublic) | Read: open |
 
-### Current Firestore Rules (published — last corrected 2026-08-10)
+### Current Firestore Rules (published — last corrected 2026-08-19)
 
-```
+```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /admin_settings/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+
+    // ── Helper functions ──────────────────────────────────────────────────
+    function isBayo() {
+      return request.auth != null
+          && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
     }
-    match /public_ocr_keys/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+    function authed() { return request.auth != null; }
+    function staffDoc(schoolId) {
+      return /databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid);
     }
-    match /admin_agents/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+    function isStaffOf(schoolId)      { return authed() && exists(staffDoc(schoolId)); }
+    function staffData(schoolId)      { return get(staffDoc(schoolId)).data; }
+    function myRole(schoolId)         { return staffData(schoolId).role; }
+    function myClass(schoolId)        { return staffData(schoolId).assignedClass; }
+    function mySubjects(schoolId)     { return staffData(schoolId).assignedSubjects; }
+    function isPrincipal(schoolId)    { return isStaffOf(schoolId) && myRole(schoolId) == 'Principal'; }
+    function isBursar(schoolId)       { return isStaffOf(schoolId) && myRole(schoolId) == 'Bursar'; }
+    function isClassTeacher(schoolId) { return isStaffOf(schoolId) && myRole(schoolId) == 'Class Teacher'; }
+    function isSubjectTeacher(schoolId){ return isStaffOf(schoolId) && myRole(schoolId) == 'Subject Teacher'; }
+    function studentClass(schoolId, studentId) {
+      return get(/databases/$(database)/documents/schools/$(schoolId)/students/$(studentId)).data.class;
     }
-    match /admin_deals/{docId} {
-      allow create: if true;
-      allow read: if true;
-      allow update, delete: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+
+    // ── Bayo-only: read + write locked to Firebase Auth UID ──────────────
+    match /admin_settings/{doc}         { allow read, write: if isBayo(); }
+    match /admin_cac/{doc}              { allow read, write: if isBayo(); }
+    match /admin_activity/{doc}         { allow read, write: if isBayo(); }
+    match /v2_deals/{doc}               { allow read, write: if isBayo(); }
+
+    // ── admin_approved_schools: Bayo-only (contains every school password)
+    match /admin_approved_schools/{doc} { allow read, write: if isBayo(); }
+
+    // ── admin_alerts: schools raise them (no auth), Bayo manages ─────────
+    match /admin_alerts/{doc} {
+      allow create:               if true;
+      allow read, update, delete: if isBayo();
     }
-    match /admin_ledger/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+
+    // ── admin_agents: public read for phone login, Bayo writes ───────────
+    match /admin_agents/{doc} {
+      allow read:  if true;
+      allow write: if isBayo();
     }
-    match /admin_approved_schools/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+
+    // ── admin_deals: agents submit + read, Bayo approves ─────────────────
+    match /admin_deals/{doc} {
+      allow read, create:   if true;
+      allow update, delete: if isBayo();
     }
-    match /admin_alerts/{docId} {
-      allow create: if true;
-      allow read, update, delete: if request.auth != null && request.auth.uid == 'HSpdm2NYK4hEGqBxyTPEi2wy39F2';
+
+    // ── admin_ledger: agents read earnings, Bayo records commissions ──────
+    match /admin_ledger/{doc} {
+      allow read:  if true;
+      allow write: if isBayo();
     }
-    match /{document=**} {
+
+    // ── public_ocr_keys: apps read keys, portal syncs them ───────────────
+    match /public_ocr_keys/{doc} {
+      allow read:  if true;
+      allow write: if isBayo();
+    }
+
+    // ── admin_opportunities: schools browse, Bayo posts ──────────────────
+    match /admin_opportunities/{doc} {
+      allow read:  if true;
+      allow write: if isBayo();
+    }
+
+    // ── admin_agent_requests: anyone can apply, Bayo manages ─────────────
+    match /admin_agent_requests/{doc} {
+      allow create:               if true;
+      allow read, update, delete: if isBayo();
+    }
+
+    // ── schools flat document: open (no per-school Firebase Auth yet) ─────
+    // KNOWN GAP — per-school auth is a separate deferred project.
+    // V2 subcollection rules below are preserved for when that project ships.
+    match /schools/{schoolId} {
       allow read, write: if true;
+
+      match /staff_directory/{uid} {
+        allow read:           if isPrincipal(schoolId) || (authed() && request.auth.uid == uid);
+        allow create:         if authed() && request.auth.uid == uid;
+        allow update, delete: if isPrincipal(schoolId);
+      }
+
+      match /students/{studentId} {
+        allow read: if isPrincipal(schoolId)
+                    || (isClassTeacher(schoolId) && myClass(schoolId) == resource.data.class)
+                    || isSubjectTeacher(schoolId)
+                    || isBursar(schoolId);
+        allow create:         if isPrincipal(schoolId) || isClassTeacher(schoolId);
+        allow update, delete: if isPrincipal(schoolId)
+                              || (isClassTeacher(schoolId) && myClass(schoolId) == resource.data.class);
+
+        match /private/fees {
+          allow read, write: if isPrincipal(schoolId) || isBursar(schoolId);
+        }
+
+        match /scores/{scoreId} {
+          allow read: if isPrincipal(schoolId)
+                      || (isClassTeacher(schoolId) && myClass(schoolId) == studentClass(schoolId, studentId))
+                      || (isSubjectTeacher(schoolId) && resource.data.subject in mySubjects(schoolId));
+          allow write: if isPrincipal(schoolId)
+                       || (isClassTeacher(schoolId) && myClass(schoolId) == studentClass(schoolId, studentId))
+                       || (isSubjectTeacher(schoolId) && request.resource.data.subject in mySubjects(schoolId));
+        }
+      }
+    }
+
+    // ── Default deny — everything not listed above is blocked ─────────────
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
 ```
 
-> ⚠️ The `schools` collection stays on the catch-all rule. It holds real school data.
-> Locking it down properly requires per-school Firebase Auth identities — a larger redesign
-> that must be scoped and tested on a single test school before touching production.
+> ⚠️ The `schools` collection stays open at the document level until per-school Firebase Auth
+> identities are provisioned. That is a separate deferred project.
+> All other admin collections are locked to Bayo's Firebase Auth UID.
 
 ---
 
