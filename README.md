@@ -1,5 +1,15 @@
 ---
 
+## 2026-08-18 (hotfix) — Portal Login Broken: SQ.push Syntax Error
+
+**Root cause:** During the GroqRotator multi-key patch, the 4 extra Groq key spreads were appended AFTER the closing `})` of the `SQ.push` call in `saveSettings()`, making the line syntactically invalid and preventing `portal_app.js` from loading at all — breaking login entirely.
+
+**Fix (commit `06b2956`):** Moved `groqKey2–5` spreads to their correct position INSIDE the `d:{}` object, before the `hfKey` spread. Node.js `--check` used to verify syntax before push. Cache bumped to `?v=20260818-hotfix` so the browser drops the broken cached file immediately.
+
+**Prevention going forward:** Any `portal_app.js` change must be syntax-checked with `node --check` before push.
+
+---
+
 ## 2026-08-18 — GroqRotator: Multi-Key Round-Robin API Rotation
 
 ### Problem
