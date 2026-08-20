@@ -1,5 +1,36 @@
 ---
 
+## 2026-08-18 — POS Machine Payment: Full Verification
+
+All POS payment components confirmed present in School-Bloom/app.js (commit `386b8d9f`):
+
+**Payment form:** Method dropdown with POS option + `togglePosFields()` shows RRN + Terminal ID fields on POS selection. RRN marked required (*). Fields auto-clear and collapse after successful save.
+
+**`recordPayment()`:** Reads `method`, `posRRN`, `posTID`. Blocks save with alert if POS + no RRN. Stores `histEntry` with `posRRN` and `posTerminal` fields. Audit log entry includes `POS · RRN: [number]`.
+
+**Payment history display:** Each entry shows `RRN: [number]` in blue below the date/method line for POS payments.
+
+**Edit modal:** POS fields (RRN + TID) shown when method is POS, pre-filled from existing entry. `toggleEpPosFields()` shows/hides on method change. `saveEditPayment()` reads and stores updated RRN.
+
+**`_renderPosSummary()`:** Shows at top of Revenue — all POS payments recorded today, amount, student name, RRN. Running total + reconciliation note.
+
+**`approveReceipt()` neutered:** Cannot update any fee. Shows error directing to bank statement upload.
+
+**`_logAudit()`:** All fee changes logged to `schools/{id}/audit_log` — bank reconciled, manual payment, deletion, edit, receipt rejection, reversal.
+
+**`renderAuditLog()` + `reverseAuditEntry()`:** Proprietor-only audit view with 7-day reversal window.
+
+**`GroqRotator`:** 5-key round-robin across all Groq calls.
+
+**Proprietor role:** Full access, canSeeFees, Audit tab visible only to Proprietor.
+
+**`pay-confirm.html`:** Parent payment confirmation + receipt upload page.
+
+No outstanding issues.
+
+**Implemented by:** Claude (Anthropic).
+---
+
 ## 2026-08-18 — POS Machine Payment Flow
 
 ### Fix — 2026-08-18 (pos2)
