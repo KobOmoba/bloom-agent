@@ -1,5 +1,51 @@
 ---
 
+## 2026-08-18 — Option 1 + Option 3: Bank-Only Authority + Proprietor Audit Log
+
+### The problem with the previous receipt approval system
+A Bursar or Principal could tap "Approve & Mark Paid" on any receipt — including fake ones submitted by friends or family. No oversight above them existed. This was flagged as a fraud risk and removed.
+
+### Option 1 — Bank statement is the ONLY authority (`School-Bloom/app.js`, commit `latest`)
+
+**`approveReceipt()` neutered:** The function now shows an error message instead of updating any fee. The button on receipt cards is replaced with a blue information notice: "Fee will update automatically when the bank statement CSV is uploaded and this payment is matched."
+
+**Bursar/Principal can still:** Reject receipts (mark obvious fakes, duplicates, or wrong payments as rejected and log them).
+
+**The only path to marking a student as paid:** Upload the bank statement CSV → system matches transactions to student names → `s.paid` is updated. No human approval required or possible.
+
+**Auto-confirm receipts:** When the CSV reconciliation matches a transaction to a student, it also checks `payment_receipts` for a pending receipt from that student with an amount within ±10%. If found, the receipt is automatically marked `confirmed_via_statement` — it disappears from the pending queue, no manual action needed.
+
+### Option 3 — Proprietor audit log with reversal (`School-Bloom/app.js`)
+
+**`_logAudit(action, studentName, amount, method, note, meta)`:** Writes to `schools/{schoolId}/audit_log/{auto-id}` every time a fee change of any kind occurs.
+
+**Six logged actions:**
+| Action | When | Reversible? |
+|---|---|---|
+| `bank_reconciled` | CSV match updates a student | ✅ Yes (7 days) |
+| `manual_payment` | Staff uses "Record Payment" on student profile | ✅ Yes (7 days) |
+| `payment_deleted` | Staff deletes a payment entry | ❌ No |
+| `payment_edited` | Staff edits a payment amount | ❌ No |
+| `receipt_rejected` | Bursar/Principal rejects a parent receipt | ❌ No |
+| `fee_reversed` | Proprietor reverses an entry | ❌ No |
+
+Every entry records: who did it (name + role), timestamp, student name, amount, method, note.
+
+**`renderAuditLog()`:** Proprietor-only view (gated by `userRole === 'Proprietor'`). Shows last 100 entries newest-first. Each entry shows: action type, student, amount, method, staff name, date-time, reversal status. Entries within 7 days that can be reversed show a purple "↩ Reverse" button.
+
+**`reverseAuditEntry(entryId)`:** Proprietor only.
+1. Finds the student, subtracts the amount from `s.paid`, removes the matching `paymentHistory` entry.
+2. Marks the audit entry as `reversed: true` with timestamp and name.
+3. Logs a new `fee_reversed` entry pointing back to the original.
+4. Updates Revenue and student list views.
+
+**Nav:** A "🔒 Audit" tab is added to the nav but is hidden by default. It becomes visible only when `userRole === 'Proprietor'` after login (controlled via `applyRoleRestrictions()`).
+
+**Cache-bust:** `app.js?v=20260818-audit`
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+---
+
 ## 2026-08-18 — Fee Access Gate (Proprietor) + Payment Receipt Confirmation Flow
 
 ### Rules clarified by Bayo
