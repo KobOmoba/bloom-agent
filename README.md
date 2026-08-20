@@ -1,5 +1,40 @@
 ---
 
+## 2026-08-18 — POS Machine Payment Flow
+
+### Context
+Parents who do not pay by bank transfer can pay in person at the school's POS terminal. The POS machine is linked to the school's bank account, so the money goes in directly. The POS slip prints a Reference Number (RRN) that appears on the bank statement — that is the audit link.
+
+### What was built (`School-Bloom/app.js`, commit `latest`)
+
+**POS fields in the payment recording form (`buildFees()`):**
+When the method dropdown is changed to "POS Machine", two new fields appear:
+- **Receipt No. (RRN)** — required. Must match what is printed on the POS slip. Saving is blocked until this is filled.
+- **Terminal ID** — optional. Useful if the school has multiple POS terminals.
+Both fields are hidden for all other payment methods.
+
+**`togglePosFields()`:** Shows/hides the POS field block when the method dropdown changes. Clears the RRN/TID fields when switching away from POS.
+
+**`recordPayment()` updated:** Reads `posRRN` and `posTerminal`, blocks saving if POS is selected without RRN, stores both in the `paymentHistory` entry as `{ posRRN, posTerminal }`. Audit log note includes `POS · RRN: [number]`.
+
+**Payment history display:** Each POS entry shows the RRN below the date/method line in blue. The Proprietor can see this in the audit log too.
+
+**Edit Payment modal (`editPayment()`):** Added POS fields to the edit form. RRN is pre-filled if already set. Required if method is changed to POS.
+
+**`_renderPosSummary()`:** Shown at the top of the Revenue section. Lists all POS payments recorded today with student name, amount, and RRN. Running total shown. Note at bottom: "Cross-check each RRN against today's POS terminal settlement report." This is the end-of-day reconciliation tool.
+
+### How fraud is prevented
+- RRN is required — a staff member cannot record a fake POS payment without an RRN from a real terminal receipt
+- Every POS entry is logged in the Proprietor audit log with the RRN included in the note
+- The Proprietor can check the RRN against the bank statement POS settlement any time
+- The Proprietor can reverse any entry within 7 days if the RRN does not match
+
+### Cache-buster
+`app.js?v=20260818-pos`
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
+---
+
 ## 2026-08-18 — Option 1 + Option 3: Bank-Only Authority + Proprietor Audit Log
 
 ### The problem with the previous receipt approval system
