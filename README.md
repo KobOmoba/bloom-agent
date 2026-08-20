@@ -2,6 +2,11 @@
 
 ## 2026-08-18 — POS Machine Payment Flow
 
+### Fix — 2026-08-18 (pos2)
+`recordPayment()` now correctly reads `posRRN` and `posTerminal` from the form, enforces RRN for POS, stores both in the history entry, clears fields after save, and writes the RRN into the audit log note. Cache: `app.js?v=20260818-pos2`
+
+
+
 ### Context
 Parents who do not pay by bank transfer can pay in person at the school's POS terminal. The POS machine is linked to the school's bank account, so the money goes in directly. The POS slip prints a Reference Number (RRN) that appears on the bank statement — that is the audit link.
 
