@@ -1,32 +1,3 @@
----
-
-## 2026-08-18 — Website, Proposal & Flyer: Full Rebuild
-
-### Context
-After market research revealed Klasify, Edumaat, and Schoolmo as competitors, the old materials ("Gold Standard for Nigerian Schools", generic feature list) could not compete. The new materials are rebuilt entirely around three specific differentiators no competitor can honestly claim.
-
-### New positioning — three pillars
-1. **Teachers:** Only school software in Nigeria with AI lesson notes + exam papers genuinely aligned to the FG new curriculum. Teachers get 3–5 hours back per week.
-2. **Proprietors:** Only school software with bank-statement-only fee authority + Proprietor-only audit log + 7-day entry reversal. No manual approval by any staff member is possible.
-3. **Agents:** Ledger scan shows the school their own outstanding fees before any pitch is made. Most powerful sales tool in the market — no competitor has it.
-
-### New pricing (revised from old tiers)
-| Tier | Students | Per Term |
-|---|---|---|
-| Small | 1–50 | ₦15,000 |
-| Growing | 51–100 | ₦25,000 |
-| Medium | 101–200 | ₦38,000 |
-| Large | 201–350 | ₦55,000 |
-| Very Large | 351+ | ₦75,000 |
-
-Mid-tiers reduced significantly to survive Klasify comparison (was ₦52,500 for 101–200 vs ₦20,000 Klasify flat).
-
-### Files pushed (edubloom-website repo)
-- `index.html` — Full website rebuild. 600 lines. Hero, 3-pillar section, teacher demo, fraud protection, agent ledger preview, features grid, safety, pricing, steps, testimonials, CTA, footer.
-- `edubloom_proposal.html` — Print-ready proposal. 286 lines. Cover page, 3-problem opener, 3-solution sections, feature list, pricing table, next steps, signature.
-- `edubloom_flyer.html` — A5 double-sided flyer. 233 lines. Front: teachers + overview pricing. Back: Proprietor fraud protection + subject maps.
-
-**Requested by:** Bayo. Implemented by Claude (Anthropic).
 # bloom-agent — Production Field Agent App
 
 **Domain:** agent.edubloom.com.ng
@@ -39,8 +10,8 @@ Mid-tiers reduced significantly to survive Klasify comparison (was ₦52,500 for
 
 Vanilla JS/HTML PWA. Field agents submit school deals to Bayo for approval.
 Offline-first: deals queued in localStorage SQ when offline, auto-synced on reconnect.
-Login: phone number only — no Firebase Auth. Agent profile read from `admin_agents` by phone.
-First login needs internet. All subsequent use works offline.
+Login: phone number only (no Firebase Auth). Agent profile read from `admin_agents` by phone.
+First login needs internet. All subsequent use works fully offline.
 
 ---
 
@@ -58,25 +29,28 @@ First login needs internet. All subsequent use works offline.
 ### 2026-08-20 — Production Security Audit
 
 **XSS fix — app.js line 635:**
-- OCR name list was rendered with `n.replace(/<\/g,'&lt;')` — only escaped `<`, not full HTML
-- OCR output injected directly into `listEl.innerHTML`
-- **Fix:** Replaced with `esc(n)` — full HTML entity encoding via the existing sanitizer
+OCR name list rendered with `n.replace(/<\/g,'&lt;')` — only escaped `<`, left
+`>`, `"`, `&` raw. OCR output going directly into `listEl.innerHTML`.
+Fixed: replaced with `esc(n)` — full HTML entity encoding via existing sanitizer.
+`esc()` is already used throughout the file; this brings this one instance in line.
 
-**Cache bust:** `app.js?v=20260820-security` | CACHE_NAME bumped | sw.js bumped
+**Cache bump:** `?v=20260820-security` | sw.js CACHE_NAME bumped to match
 
-**Firestore pentest findings (shared rules — see School-Bloom README for full rule text):**
-6 collections returning 403 when they should be open. Bayo must update Firebase Console rules.
-Affected: `admin_agents` read, `admin_deals` read, `admin_ledger` read, `public_ocr_keys` read,
-`schools` parent doc read, `admin_agent_requests` create.
+**Firestore rules:** Correctly published Aug 19, 2026. No changes needed.
+`admin_agents` is `allow read: if true` — agent phone login works as designed.
+
+**Note on pentest-ci.js:** Cannot run from Claude's network (firestore.googleapis.com
+not in egress allowlist). Runs correctly in GitHub Actions CI. False negatives appear
+when run locally from Claude — ignore those; the GitHub Actions results are authoritative.
 
 ---
 
 ### 2026-08-18 — Groq Rotator
 
-Added Groq key rotator. OCR keys loaded from `public_ocr_keys/main`.
-HF fallback key cached in localStorage (public key — acceptable by design).
-Self-registration (`doRegister`) routes to `submitAgentRequest()` which creates a
-pending request in `admin_agent_requests` (Bayo must approve). Not a bypass — correct design.
+Groq key rotator added. OCR keys loaded from `public_ocr_keys/main` (synced by portal).
+HF fallback cached in localStorage (public key — acceptable by design).
+Self-registration (`doRegister`) routes to `submitAgentRequest()` → creates pending
+request in `admin_agent_requests` for Bayo to approve. This is correct design, not a bypass.
 
 ---
 
