@@ -632,7 +632,7 @@ function openShowPrincipalPanel(){
     const listEl = $('sp-names-list');
     const names = (typeof csvParsedNames !== 'undefined' && csvParsedNames.length) ? csvParsedNames.map(s => s.name) : [];
     if (names.length) {
-      listEl.innerHTML = names.map((n, i) => '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + (i+1) + '. ' + n.replace(/</g,'&lt;') + '</div>').join('');
+      listEl.innerHTML = names.map((n, i) => '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + (i+1) + '. ' + esc(n) + '</div>').join('');
     } else {
       listEl.innerHTML = '<div style="color:var(--sub);text-align:center;padding:1rem 0;">No names captured yet — use the Smart Register Counter above first.</div>';
     }
