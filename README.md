@@ -1,3 +1,61 @@
+---
+
+## 2026-08-18 — School App Makeover: Login Props, Role-Aware Home, Nav Regrouped
+
+### Three targeted changes to school.edubloom.com.ng
+
+**Why:** The old login screen said nothing useful. The nav was a flat wall of 30+ items with Revenue buried under STUDENTS and Lesson Notes at the very bottom. There was no dedicated home screen — the Home button just redirected to Revenue for everyone. Teachers looking for lesson notes had to hunt. The Proprietor Audit Log was invisible.
+
+---
+
+**Change 1 — Login screen value props (`index.html`, commit `42af4129`)**
+
+Three lines added below the slogan, above the School ID input:
+- 📖 AI lesson note for any subject in 30 seconds
+- 🔒 Proprietor fraud protection only you can see
+- 💰 Fee collection verified by your bank statement
+
+Small pill-shaped items with border and subtle background. First thing a new school sees when they open the app.
+
+---
+
+**Change 2 — Role-aware Home dashboard (`app.js`, commit `b138ce71`)**
+
+New `renderHome()` function — every role lands here first (all `ROLE_DEFAULT_TAB` values changed to `'home'`). Content is entirely different per role:
+
+**Proprietor:** Audit Log card (purple, prominent, full width) → pending receipts count → POS today total → outstanding/collected fee split → quick links to students, staff, analytics, settings.
+
+**Principal:** Outstanding fees (red) → pending receipts → students count → collection rate → six quick-action cards including Lesson Notes and CA Exams prominently featured.
+
+**Bursar:** Outstanding fees big card → pending receipts → POS today → Upload Bank Statement shortcut → expenses and Finance AI.
+
+**Class Teacher:** Two giant full-width cards: "📖 Generate Lesson Note — Start Now →" (purple) and "❓ Set a CA or Exam Paper — Create Paper →" (orange). Then class-specific shortcuts: Attendance, Scores, Student Profiles, Report Cards.
+
+**Subject Teacher:** Same two giant teaching tools cards with the teacher's assigned subjects shown. Then Scores, Report Cards, Students, Attendance.
+
+`ROLE_TABS` updated to include 'home' for all explicit whitelists (Class Teacher, Subject Teacher, Bursar). `go()` dispatch and `goDashboard()` both wired to 'home'.
+
+---
+
+**Change 3 — Navigation regrouped (`index.html`, commit `42af4129`)**
+
+Old mainNav had Revenue under STUDENTS and Lesson Notes orphaned at the bottom with no group. New structure (7 groups):
+
+1. **TEACHING TOOLS** — Lesson Notes, CA & Exams ← now first, most prominent
+2. **FEES & FINANCE** — Revenue, Expenses, Payroll, Finance AI
+3. **STUDENTS** — Students, Student Profile, Scores, Attendance, Report Cards
+4. **STAFF** — Staff
+5. **SAFETY & COMMS** — Safety, Communications, Alerts & Agents
+6. **INSIGHTS** — Analytics, Opportunity Scout, Alumni
+7. **EXTRAS** — Sports, Arts, Music, Health
+8. **🔒 PROPRIETOR ONLY** — Audit Log (hidden until Proprietor logs in)
+9. **SYSTEM** — Help & Support, Settings
+
+Bottom nav reduced from 11 buttons to 5 clean ones: Home · Lessons · Students · Revenue · More
+
+**Cache-bust:** `app.js?v=20260818-makeover`
+
+**Requested by:** Bayo. Implemented by Claude (Anthropic).
 # bloom-agent — Production Field Agent App
 
 **Domain:** agent.edubloom.com.ng
