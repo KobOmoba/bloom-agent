@@ -1,5 +1,40 @@
 ---
 
+## 2026-08-23 — Offline Badge + Empty Dropdowns Fix
+
+### What was visible in the screenshot
+- "Offline" badge + "Loading…" still showing even on 4G
+- "BASIC" badge instead of Premium
+- Class and Subject dropdowns blank in Lesson Notes
+
+### Root cause
+`sw.js` CACHE_NAME was still `20260820-security` — unchanged across all the makeover pushes
+(index.html cache-buster was bumped but sw.js was not). The service worker was therefore
+still serving the old cached app.js, which predated the makeover, the syntax fix, and the
+`_isPremium()` permanent-true setting. Every phone that had previously visited the site was
+running old code no matter what we pushed to GitHub.
+
+### Fixes (3 commits)
+
+**`sw.js` (`b07f8187`):** CACHE_NAME bumped to `edubloom-School-Bloom-20260823-makeover`.
+This forces every phone to delete the old cache on next visit and download the current version.
+This is the correct fix for all three symptoms simultaneously — Offline badge, BASIC label,
+and empty dropdowns all came from the stale service worker.
+
+**`app.js` (`eb8f5506`):** `renderLessons()` and `renderQuestions()` now always call
+`updateLessonSubjects()` / `updateQSubjects()` when the section is shown, not only on first
+render. The `dataset.ready` guard still controls heavier one-time init but no longer blocks
+the dropdown population.
+
+**`index.html` (`63529f49`):** Cache-buster bumped to `app.js?v=20260823-makeover`.
+
+### Standing rule reminder
+Every push that changes app.js or style.css MUST also bump sw.js CACHE_NAME in the same
+commit. These three must always move together: `app.js?v=`, `style.css?v=`, `CACHE_NAME`.
+
+**Reported by:** Bayo (screenshot). Fixed by Claude (Anthropic).
+---
+
 ## 2026-08-18 — Makeover Syntax Fix (Enter Portal & Try Demo restored)
 
 **Root cause:** The `generateLessonNote()` Groq prompt used `\n` escape sequences inside single-quoted strings within template literal expressions. During multiple Python string-processing passes across sessions, these became literal newlines, breaking the JS parser. Both the original injection and a duplicate copy accumulated, giving two `const CURRICULUM` declarations and two `// TEACHING TOOLS` blocks.
