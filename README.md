@@ -1,5 +1,22 @@
 ---
 
+## 2026-08-18 — Makeover Syntax Fix (Enter Portal & Try Demo restored)
+
+**Root cause:** The `generateLessonNote()` Groq prompt used `\n` escape sequences inside single-quoted strings within template literal expressions. During multiple Python string-processing passes across sessions, these became literal newlines, breaking the JS parser. Both the original injection and a duplicate copy accumulated, giving two `const CURRICULUM` declarations and two `// TEACHING TOOLS` blocks.
+
+**Fix (`20e6c88d`):**
+1. Located FIRST occurrence of `// TEACHING TOOLS` marker and LAST occurrence of `// ── End Teaching Tools` marker — a 1,330-line span covering both duplicate blocks.
+2. Replaced entire span with a single clean 271-line teaching tools block where:
+   - No single-quoted strings contain `\n` escape sequences — prompt is built as an array of strings joined with `\n`
+   - No template literals with conditional expressions containing string escapes
+   - All string concatenation uses `+` operator inside expressions, not embedded escape sequences
+3. Node `--check` confirmed syntax clean before push.
+4. Cache-bumped `index.html` to `app.js?v=20260818-fixed`.
+
+**Enter Portal, Try Demo, Lesson Notes, and Question Generator all restored.**
+
+---
+
 ## 2026-08-18 — School App Makeover: Login Props, Role-Aware Home, Nav Regrouped
 
 ### Three targeted changes to school.edubloom.com.ng
