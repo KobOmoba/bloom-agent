@@ -20,21 +20,11 @@ try {
 // ── State ──────────────────────────────────────────────────────────────────
 let agent = null;    // { id, name, phone, commission }
 let selTier = null;
-const TIERS_LIST = [
-  {max:50,  price:15000,  name:'Premium · 1–50 students'},
-  {max:100, price:30000,  name:'Premium · 51–100 students'},
-  {max:200, price:52500,  name:'Premium · 101–200 students'},
-  {max:350, price:82500,  name:'Premium · 201–350 students'},
-  {max:9999,price:112500, name:'Premium · 351+ students'}
-];
-  // { price, name, max }
-const TIERS = [
-  { price:15000,  name:'Premium · 1–50',    max:50   },
-  { price:30000,  name:'Premium · 51–100',  max:100  },
-  { price:52500,  name:'Premium · 101–200', max:200  },
-  { price:82500,  name:'Premium · 201–350', max:350  },
-  { price:112500, name:'Premium · 351+',    max:9999 },
-];
+// ── Flat pricing: all schools ₦15,000 · agent earns ₦5,000 per school ──────
+const FLAT_PRICE      = 15000;   // school pays this per term
+const AGENT_COMM      = 5000;    // agent earns this per approved school (not per term)
+const TIERS_LIST = [{ max:9999, price:FLAT_PRICE, name:'Premium' }];
+const TIERS      = [{ max:9999, price:FLAT_PRICE, name:'Premium' }];
 
 // ── Sync queue ─────────────────────────────────────────────────────────────
 const SQ = {
@@ -557,6 +547,7 @@ function go(tab){
   if(btn) btn.classList.add('on');
   if(tab==='deals') renderDeals();
   if(tab==='earnings') renderEarnings();
+  if(tab==='leaderboard') renderLeaderboard();
   if(tab==='settings') renderSettingsProfile();
 }
 
@@ -569,13 +560,8 @@ function selectTier(el, price, name, max){
 }
 
 function autoTier(){
-  const n=parseInt($('s-count').value)||0;
-  if(!n)return;
-  const t=TIERS_LIST.find(x=>n<=x.max)||TIERS_LIST[4];
-  document.querySelectorAll('.tier').forEach((el,i)=>{
-    el.classList.toggle('sel', TIERS_LIST[i]?.name===t.name);
-  });
-  selTier=t;
+  // Single flat tier — always selected
+  selTier = TIERS[0];
   updateCommission();
 }
 
@@ -653,13 +639,16 @@ function closeShowPrincipalPanel(){
 }
 
 function updateCommission(){
-  if(!selTier)return;
-  const terms=parseInt($('s-terms').value)||1;
-  const total=selTier.price*terms;
-  const comm=Math.round(total*((agent.commission||20)/100));
-  $('comm-box').style.display='block';
-  $('comm-amt').textContent=fmt(comm);
-  $('comm-total').textContent=`Total school pays: ${fmt(total)} for ${terms} term${terms>1?'s':''}`;
+  // Flat commission: agent always earns ₦5,000 per approved school
+  selTier = selTier || TIERS[0];
+  const terms = parseInt(($('s-terms')||{}).value)||1;
+  const schoolTotal = FLAT_PRICE * terms;
+  const el = $('comm-box');
+  if(el) el.style.display='block';
+  const amtEl = $('comm-amt');
+  if(amtEl) amtEl.textContent = fmt(AGENT_COMM);
+  const totEl = $('comm-total');
+  if(totEl) totEl.textContent = `School pays: ${fmt(schoolTotal)} for ${terms} term${terms>1?'s':''}`;
 }
 
 
@@ -689,14 +678,15 @@ async function submitDeal(){
   if(!name){ showFB(fb,'bad','Enter the school name.'); window._dealSubmitting=false; return; }
   if(!phone||phone.length<10){ showFB(fb,'bad','Enter principal\'s WhatsApp (e.g. 2348012345678).'); window._dealSubmitting=false; return; }
   if(!count||count<1){ showFB(fb,'bad','Enter approximate number of students.'); window._dealSubmitting=false; return; }
-  if(!selTier){ showFB(fb,'bad','Select a pricing tier.'); window._dealSubmitting=false; return; }
+  // Auto-set flat tier (always ₦15,000)
+  selTier = TIERS[0];
 
   const btn=$('submit-btn'); btn.textContent='Submitting...'; btn.disabled=true;
   const deal={
     timestamp:new Date(), status:'pending',
-    agent:{ id:agent.id, name:agent.name, phone:agent.phone, commission:agent.commission||20 },
+    agent:{ id:agent.id, name:agent.name, phone:agent.phone, commission:AGENT_COMM },
     school:{ name, address, lga, state, phone, email, studentCount:count },
-    tier:{ name:selTier.name, price:selTier.price },
+    tier:{ name:'Premium', price:FLAT_PRICE },
     terms, notes,
     // AI-scanned student names — used by onboarding agent to pre-load school
     scannedStudents: csvParsedNames.length ? csvParsedNames : [],
@@ -724,7 +714,7 @@ async function submitDeal(){
       await db.collection('admin_deals').add(deal);
     }
     else{ SQ.push({t:'deal',d:deal}); }
-    window._dealSubmitting=false; showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(Math.round(selTier.price*terms*((agent.commission||20)/100))/1)} on approval.`);
+    window._dealSubmitting=false; showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(AGENT_COMM)} on approval.`);
     pipelineReset();
     // ✅ Command center stays in control — no direct principal contact from agent app.
     // Bayo reviews the deal, generates school code, and sends the onboarding link.
@@ -783,7 +773,7 @@ async function renderDeals(){
     const isOffline = !!d._offline;
     const status = isOffline ? 'queued' : (d.status||'pending');
     const chipCls = status==='approved'?'chip-a':status==='rejected'?'chip-r':'chip-p';
-    const comm=Math.round((d.tier?.price||0)*((d.agent?.commission||20)/100)*(d.terms||1));
+    const comm = AGENT_COMM; // flat ₦5,000 per school
     const ts = isOffline ? 'Saved offline — syncing when online' :
       (d.timestamp?.toDate ? d.timestamp.toDate().toLocaleDateString('en-NG') : 'just now');
     return `<div class="deal ${status==='approved'?'appr':status==='rejected'?'rejt':'pend'}" style="${isOffline?'opacity:0.85;':''}">
@@ -929,7 +919,7 @@ function renderCountResult(names) {
   csvStudentCount = unique.length;
   csvParsedNames  = unique.map(name => ({ name, class: null }));
   const tier = TIERS_LIST.find(t => csvStudentCount <= t.max) || TIERS_LIST[4];
-  const comm = Math.round(tier.price * 0.20);
+  const comm = AGENT_COMM; // flat ₦5,000 per school
 
   // Update all count display elements (pipeline + legacy)
   ['csv-student-count'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=csvStudentCount; });
@@ -1231,7 +1221,7 @@ function ocrConfirmImport() {
   csvParsedNames = sel.map(r => ({ name: r.name, class: r.cls || null }));
   csvStudentCount = csvParsedNames.length;
   const tier = TIERS_LIST.find(t => csvStudentCount <= t.max) || TIERS_LIST[4];
-  const comm = Math.round(tier.price * 0.20);
+  const comm = AGENT_COMM; // flat ₦5,000 per school
   const qe = id => document.getElementById(id);
   if (qe('csv-student-count')) qe('csv-student-count').textContent = csvStudentCount;
   if (qe('csv-tier-name'))     qe('csv-tier-name').textContent     = tier.name;
@@ -3187,7 +3177,7 @@ function renderSettingsProfile() {
         <div style="font-size:0.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">Agent Profile</div>
         <div style="font-size:1.1rem;font-weight:700;color:white;">${esc(agent.name)}</div>
         <div style="font-size:0.85rem;color:var(--sub);margin-top:0.3rem;">📱 ${esc(agent.phone)}</div>
-        <div style="font-size:0.85rem;color:var(--money);margin-top:0.3rem;">Commission: ${agent.commission || 20}%</div>
+        <div style="font-size:0.85rem;color:var(--money);margin-top:0.3rem;">Commission: ₦5,000 per school onboarded</div>
       </div>
 
       <div style="background:var(--card);border-radius:16px;padding:1.2rem;margin-bottom:1rem;">
@@ -3218,3 +3208,79 @@ function renderSettingsProfile() {
 // saveGroqKey() removed — keys now auto-load via secure proxy on login, no manual entry needed.
 
 // build-retrigger 1783047742
+
+// ── Top-3 Agent Leaderboard ───────────────────────────────────────────────────
+async function renderLeaderboard(){
+  const c = document.getElementById('lb-list');
+  if(!c) return;
+  c.innerHTML = '<p style="text-align:center;color:var(--sub);padding:2rem;">Loading…</p>';
+
+  try {
+    const snap = await db.collection('admin_deals').where('status','==','approved').get();
+    const deals = snap.docs.map(d => d.data());
+
+    // Aggregate by agent
+    const map = {};
+    deals.forEach(d => {
+      const key  = d.agent?.id || d.agent?.phone || 'unknown';
+      const name = d.agent?.name || 'Unknown Agent';
+      if (!map[key]) map[key] = { name, count:0, earnings:0 };
+      map[key].count++;
+      map[key].earnings += AGENT_COMM;
+    });
+
+    const ranked = Object.values(map).sort((a,b) => b.count - a.count);
+
+    if (!ranked.length) {
+      c.innerHTML = '<p style="text-align:center;color:var(--sub);padding:2rem;">No approved schools yet — be the first!</p>';
+      return;
+    }
+
+    const medals  = ['🥇','🥈','🥉'];
+    const bgColor = ['rgba(250,204,21,0.12)','rgba(148,163,184,0.1)','rgba(234,179,8,0.08)'];
+    const border  = ['#fbbf24','#94a3b8','#d97706'];
+
+    const myName = agent?.name || '';
+
+    // Top 3 reward cards
+    const top3 = ranked.slice(0, 3).map((a,i) => `
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:${bgColor[i]};border:1.5px solid ${border[i]};border-radius:12px;margin-bottom:10px;">
+        <div style="font-size:2rem;flex-shrink:0;">${medals[i]}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:800;font-size:0.95rem;${a.name===myName?'color:#818cf8;':''}">${esc(a.name)}${a.name===myName?' <span style="font-size:0.72rem;background:#312e81;color:#c7d2fe;padding:2px 7px;border-radius:20px;font-weight:700;">YOU</span>':''}</div>
+          <div style="font-size:0.8rem;color:var(--sub);margin-top:2px;">${a.count} school${a.count!==1?'s':''} onboarded · ${fmt(a.earnings)} earned</div>
+        </div>
+        <div style="font-size:0.72rem;font-weight:800;color:${border[i]};text-align:center;flex-shrink:0;">🏆<br>REWARD</div>
+      </div>`).join('');
+
+    // Rest of leaderboard
+    const rest = ranked.slice(3).map((a,i) => {
+      const pos = i + 4;
+      const isMe = a.name === myName;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface,#1a1a2e);border:1px solid var(--border);border-radius:9px;margin-bottom:7px;${isMe?'border-color:#818cf8;':''}" >
+        <div style="font-weight:800;color:var(--sub);font-size:0.85rem;width:24px;text-align:center;">#${pos}</div>
+        <div style="flex:1;font-weight:600;font-size:0.87rem;${isMe?'color:#818cf8;':''}">${esc(a.name)}${isMe?' (You)':''}</div>
+        <div style="font-size:0.8rem;color:var(--sub);">${a.count} school${a.count!==1?'s':''}</div>
+      </div>`;
+    }).join('');
+
+    // Find my position if outside top 10
+    const myPos = ranked.findIndex(a => a.name === myName);
+    const myEntry = myPos >= 0 && ranked[myPos];
+    const myCallout = (myPos >= 0 && myPos >= 10) ? `
+      <div style="margin-top:12px;padding:12px;background:rgba(129,140,248,0.08);border:1px solid #4f46e5;border-radius:9px;text-align:center;font-size:0.82rem;color:#a5b4fc;">
+        Your position: <strong>#${myPos+1}</strong> · ${myEntry.count} school${myEntry.count!==1?'s':''} · ${fmt(myEntry.earnings)} earned<br>
+        <span style="font-size:0.75rem;color:var(--sub);">Onboard more schools to break into the top 3 and earn a reward!</span>
+      </div>` : '';
+
+    c.innerHTML = `
+      <div style="font-size:0.72rem;font-weight:700;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;">🏆 Top 3 get rewarded at end of term</div>
+      ${top3}
+      ${ranked.length > 3 ? `<div style="font-size:0.72rem;font-weight:700;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;margin:14px 0 8px;">Other Agents</div>${rest}` : ''}
+      ${myCallout}`;
+
+  } catch(e) {
+    c.innerHTML = '<p style="color:var(--sub);text-align:center;padding:1rem;">Could not load leaderboard — check your connection</p>';
+  }
+}
+// ── End Leaderboard ───────────────────────────────────────────────────────────
