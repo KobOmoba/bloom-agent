@@ -292,43 +292,17 @@
         <label>Number of Students (type or upload CSV above)</label>
         <input type="number" id="s-count" placeholder="e.g. 85 — or upload CSV above to count automatically" oninput="autoTier()">
         <label style="display:flex;align-items:center;gap:6px;">Select Premium Plan <span style="font-size:0.68rem;font-weight:800;background:#7c3aed;color:#fff;border-radius:4px;padding:1px 6px;letter-spacing:0.05em;">✨ ALL PREMIUM</span></label>
-        <div class="tiers">
-          <div class="tier" onclick="selectTier(this,15000,'Premium · 1–50 students',50)">
-            <div class="tier-badge">✨ PREMIUM</div>
-            <div class="tier-range">1–50 students</div>
-            <div class="tier-price">₦15,000</div>
-            <div class="tier-range">per term</div>
-          </div>
-          <div class="tier" onclick="selectTier(this,30000,'Premium · 51–100 students',100)">
-            <div class="tier-badge">✨ PREMIUM</div>
-            <div class="tier-range">51–100 students</div>
-            <div class="tier-price">₦30,000</div>
-            <div class="tier-range">per term</div>
-          </div>
-          <div class="tier" onclick="selectTier(this,52500,'Premium · 101–200 students',200)">
-            <div class="tier-badge">✨ PREMIUM</div>
-            <div class="tier-range">101–200 students</div>
-            <div class="tier-price">₦52,500</div>
-            <div class="tier-range">per term</div>
-          </div>
-          <div class="tier" onclick="selectTier(this,82500,'Premium · 201–350 students',350)">
-            <div class="tier-badge">✨ PREMIUM</div>
-            <div class="tier-range">201–350 students</div>
-            <div class="tier-price">₦82,500</div>
-            <div class="tier-range">per term</div>
-          </div>
-          <div class="tier" style="grid-column:1/-1;" onclick="selectTier(this,112500,'Premium · 351+ students',9999)">
-            <div class="tier-badge">✨ PREMIUM</div>
-            <div class="tier-range">351+ students</div>
-            <div class="tier-price">₦112,500</div>
-            <div class="tier-range">per term</div>
-          </div>
+        <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);border-radius:14px;padding:18px;text-align:center;margin-bottom:12px;">
+          <div style="font-size:0.7rem;font-weight:800;color:rgba(255,255,255,0.7);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">✨ PREMIUM PLAN · ALL SCHOOLS</div>
+          <div style="font-size:2.4rem;font-weight:900;color:#fff;line-height:1;">₦15,000</div>
+          <div style="font-size:0.82rem;color:rgba(255,255,255,0.8);margin-top:4px;">per term — flat rate, every school</div>
         </div>
-        <div id="comm-box" class="comm-box" style="display:none;">
-          <div class="comm-lbl">Your Commission (20%)</div>
-          <div class="comm-amt" id="comm-amt">₦0</div>
-          <div class="comm-lbl" id="comm-total" style="margin-top:4px;"></div>
-          <div class="comm-lbl" style="margin-top:4px;color:#34d399;">+ 5% residual every renewal term</div>
+        </div>
+        <div id="comm-box" class="comm-box" style="display:block;">
+          <div class="comm-lbl">Your Commission</div>
+          <div class="comm-amt" id="comm-amt">₦5,000</div>
+          <div class="comm-lbl" id="comm-total" style="margin-top:4px;">School pays: ₦15,000 per term</div>
+          <div class="comm-lbl" style="margin-top:4px;color:#34d399;">Fixed ₦5,000 per school onboarded &amp; approved</div>
         </div>
         <label>Number of Terms Paying</label>
         <select id="s-terms" onchange="updateCommission()">
@@ -478,13 +452,24 @@
   </div>
 </section>
 
-  </main>
+  
+    <!-- LEADERBOARD -->
+    <section id="sec-leaderboard" class="sec">
+      <div style="padding:0 0 4px">
+        <h2 style="font-size:1.15rem;font-weight:800;margin:0 0 2px">🏆 Agent Leaderboard</h2>
+        <p style="font-size:0.78rem;color:var(--sub);margin:0 0 16px">Schools onboarded this term. Top 3 agents get rewarded at the end.</p>
+        <div id="lb-list"><p style="text-align:center;color:var(--sub);padding:2rem;">Loading…</p></div>
+        <button onclick="renderLeaderboard()" style="width:100%;margin-top:12px;padding:10px;background:var(--surface,#1a1a2e);border:1px solid var(--border);border-radius:9px;color:var(--sub);font-size:0.82rem;cursor:pointer;">🔄 Refresh</button>
+      </div>
+    </section>
+</main>
 
   <nav class="nav">
     <button class="nlink on" data-tab="submit" onclick="go('submit')"><span>📝</span>Submit</button>
     <button class="nlink" data-tab="deals" onclick="go('deals')"><span>📋</span>My Deals</button>
     <button class="nlink" data-tab="ai-agents" onclick="go('ai-agents')"><span>🤖</span>AI Assist</button>
     <button class="nlink" data-tab="earnings" onclick="go('earnings')"><span>💰</span>Earnings</button>
+<button class="nlink" data-tab="leaderboard" onclick="go('leaderboard')"><span>🏆</span>Leaders</button>
     <button class="nlink" data-tab="settings" onclick="go('settings')"><span>⚙️</span>Settings</button>
   </nav>
 </div>
