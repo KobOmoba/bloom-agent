@@ -22,7 +22,8 @@ let agent = null;    // { id, name, phone, commission }
 let selTier = null;
 // ── Flat pricing: all schools ₦15,000 · agent earns ₦5,000 per school ──────
 const FLAT_PRICE      = 15000;   // school pays this per term
-const AGENT_COMM      = 5000;    // agent earns this per approved school (not per term)
+const AGENT_COMM         = 5000;   // new school onboarded & approved
+const AGENT_RENEWAL_COMM = 2500;   // 50% of base — paid each time a school renews
 const TIERS_LIST = [{ max:9999, price:FLAT_PRICE, name:'Premium' }];
 const TIERS      = [{ max:9999, price:FLAT_PRICE, name:'Premium' }];
 
@@ -799,17 +800,37 @@ function resendOnboarding(phone, schoolName, schoolId){
 async function renderEarnings(){
   try{
     const snap=await db.collection('admin_ledger').where('agentPhone','==',agent.phone).get();
-    const entries=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const total=entries.reduce((s,e)=>s+(e.amount||0),0);
-    const paid=entries.filter(e=>e.paid).reduce((s,e)=>s+(e.amount||0),0);
-    $('earn-total').textContent=fmt(total);
-    $('earn-paid').textContent=fmt(paid);
-    $('earn-pending').textContent=fmt(total-paid);
+    const entries=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+      const ta=a.date?.toDate?a.date.toDate():new Date(a.date||0);
+      const tb=b.date?.toDate?b.date.toDate():new Date(b.date||0);
+      return tb-ta;
+    });
+    const total   = entries.reduce((s,e)=>s+(e.amount||0),0);
+    const paid    = entries.filter(e=>e.paid).reduce((s,e)=>s+(e.amount||0),0);
+    const newCnt  = entries.filter(e=>!e.isRenewal).length;
+    const renCnt  = entries.filter(e=> e.isRenewal).length;
+    $('earn-total').textContent   = fmt(total);
+    $('earn-paid').textContent    = fmt(paid);
+    $('earn-pending').textContent = fmt(total-paid);
+    // Summary chips
+    const sumEl = document.getElementById('earn-summary');
+    if(sumEl) sumEl.innerHTML =
+      `<span style="background:rgba(52,211,153,0.15);color:#34d399;padding:3px 10px;border-radius:20px;font-size:0.74rem;font-weight:700;">${newCnt} new school${newCnt!==1?'s':''} · ₦5,000 each</span>` +
+      (renCnt ? `&nbsp;<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:3px 10px;border-radius:20px;font-size:0.74rem;font-weight:700;">${renCnt} renewal${renCnt!==1?'s':''} · ₦2,500 each</span>` : '');
     const tbody=$('earn-body');
-    tbody.innerHTML=entries.length===0?'<tr><td colspan="4" style="text-align:center;color:var(--sub);padding:2rem;">No earnings yet.</td></tr>':entries.map(e=>{
+    tbody.innerHTML=entries.length===0?'<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:2rem;">No earnings yet.</td></tr>':entries.map(e=>{
       const dt=e.date?.toDate?e.date.toDate():new Date();
       const paidCls=e.paid?'chip-a':'chip-p';
-      return `<tr><td>${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td><td style="font-size:0.75rem;">${e.schoolId||'—'}</td><td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td><td><span class="chip ${paidCls}" style="position:static;">${e.paid?'Paid':'Pending'}</span></td></tr>`;
+      const typeBadge=e.isRenewal
+        ?'<span style="font-size:0.68rem;background:rgba(167,139,250,0.2);color:#a78bfa;padding:2px 7px;border-radius:10px;font-weight:700;">Renewal</span>'
+        :'<span style="font-size:0.68rem;background:rgba(52,211,153,0.15);color:#34d399;padding:2px 7px;border-radius:10px;font-weight:700;">New</span>';
+      return `<tr>
+        <td>${dt.toLocaleDateString('en-NG',{day:'numeric',month:'short'})}</td>
+        <td style="font-size:0.75rem;">${e.schoolId||e.schoolName||'—'}</td>
+        <td>${typeBadge}</td>
+        <td style="color:var(--money);font-weight:700;">${fmt(e.amount||0)}</td>
+        <td><span class="chip ${paidCls}" style="position:static;">${e.paid?'Paid':'Pending'}</span></td>
+      </tr>`;
     }).join('');
   }catch(e){ console.warn('Earnings:',e); }
 }
