@@ -299,10 +299,19 @@
         </div>
         </div>
         <div id="comm-box" class="comm-box" style="display:block;">
-          <div class="comm-lbl">Your Commission</div>
-          <div class="comm-amt" id="comm-amt">₦5,000</div>
+          <div class="comm-lbl" style="font-weight:700;margin-bottom:8px;">Your Commission</div>
+          <div style="display:flex;gap:10px;justify-content:center;margin-bottom:6px;">
+            <div style="text-align:center;flex:1;">
+              <div class="comm-amt" id="comm-amt" style="font-size:1.5rem;">₦5,000</div>
+              <div class="comm-lbl">New school</div>
+            </div>
+            <div style="width:1px;background:rgba(255,255,255,0.15);"></div>
+            <div style="text-align:center;flex:1;">
+              <div class="comm-amt" style="font-size:1.5rem;color:#a78bfa;">₦2,500</div>
+              <div class="comm-lbl">Renewal</div>
+            </div>
+          </div>
           <div class="comm-lbl" id="comm-total" style="margin-top:4px;">School pays: ₦15,000 per term</div>
-          <div class="comm-lbl" style="margin-top:4px;color:#34d399;">Fixed ₦5,000 per school onboarded &amp; approved</div>
         </div>
         <label>Number of Terms Paying</label>
         <select id="s-terms" onchange="updateCommission()">
@@ -421,11 +430,12 @@
         <div class="stat-n" id="earn-pending" style="color:var(--warn);">₦0</div>
         <div class="stat-l">Pending Payment</div>
       </div>
+      <div id="earn-summary" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
       <div class="card">
         <div class="card-title">Commission History</div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Date</th><th>School ID</th><th>Amount</th><th>Status</th></tr></thead>
+            <thead><tr><th>Date</th><th>School</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead>
             <tbody id="earn-body"></tbody>
           </table>
         </div>
