@@ -5,7 +5,7 @@
 //  assets (icons/manifest/CDN), Network-First for Firestore
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_NAME   = 'edubloom-School-Bloom-20260826-lessons-fixedubloom-School-Bloom-20260904-lessons-20260904';
+const CACHE_NAME   = 'edubloom-agent-20260908-signboard-fix';
 const SHELL_ASSETS = [
   // Same-origin files only — CDN URLs intentionally excluded.
   // cache.addAll() is all-or-nothing: one CDN timeout blocks the entire
