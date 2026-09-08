@@ -1630,13 +1630,72 @@ async function groqVisionOCR(base64, mime) {
   }).filter(s => s.fullName.length >= 3);
 }
 
+// ── Signboard OCR ──────────────────────────────────────────────────────────────
+
+// Trained on Nigerian school signboards: banners, painted walls, flex prints, weathered boards.
+// Handles: partial text, faded boards, abbreviations (JSS/SSS/LGA), hand-painted lettering.
+const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign.
+Extract the school details and return ONLY a valid JSON object — no markdown, no explanation.
+
+Fields to extract:
+- "name": Full official school name exactly as written on the board. The school name is usually the LARGEST text. Examples seen: "Wisdomwalk Nursery & Primary School", "Christ Seed Learners Schools Abeokuta", "Matilda Hill Schools", "Olaroyals Schools", "Perfect Gold College", "Empowerment Model School", "Bukoye Royal Nursery & Primary School".
+- "address": Full address as written: street, area, city. Example: "Gbangba Market, Isale Abese, Abeokuta" or "3, Olori Oniru Street, Off Bola Ajibola Road, Asero, Abeokuta" or "5 Babs Street Behind A.A. Rano Filling Station, More Junction, Abeokuta".
+- "lga": The Local Government Area. INFER from address if not stated:
+  * Asero, Asero Estate, Bola Ajibola Street, Ikopa Titun, Madojutimi = "Abeokuta South"
+  * Isale Abese, Gbangba Market, Ilugun, Oke Lantoro = "Abeokuta North"
+  * More Junction, Onikolobo, Iberekodo = "Abeokuta South"
+  * Ijaiye, Kemta = "Odeda"
+  * If city is Abeokuta but area unknown, use "Abeokuta South"
+  * If another Nigerian city, name its LGA (e.g. Lagos Island = "Lagos Island", Ikeja = "Ikeja")
+- "state": State name only, no "State" suffix. Infer from city: Abeokuta = "Ogun", Lagos = "Lagos", Ibadan = "Oyo", Port Harcourt = "Rivers", Kano = "Kano". If visible on board, use that.
+- "phone": First phone number on the board, digits only (e.g. "07035026131"). Nigerian numbers start with 07, 08, or 09.
+- "type": Comma-separated list of school levels offered. Use: Creche, Nursery, Primary, Secondary, College. JSS/SSS → Secondary. KG/Kindergarten → Nursery. If Common Entrance is mentioned, include Secondary.
+
+Return ONLY this JSON — nothing else:
+{"name":"","address":"","lga":"","state":"","phone":"","type":""}`;
+
+// Canvas-based image compression — reduces large phone photos before sending to Groq.
+// Keeps quality high enough for text recognition; max 900px on longest side.
+function _compressImageSimple(dataURL, maxPx) {
+  maxPx = maxPx || 900;
+  return new Promise(function(resolve) {
+    var img = new Image();
+    img.onload = function() {
+      try {
+        var w = img.naturalWidth  || img.width;
+        var h = img.naturalHeight || img.height;
+        var ratio = Math.min(1, maxPx / Math.max(w, h));
+        var cw = Math.round(w * ratio);
+        var ch = Math.round(h * ratio);
+        var canvas = document.createElement('canvas');
+        canvas.width  = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, cw, ch);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      } catch(e) {
+        resolve(dataURL); // fallback: send original if canvas fails
+      }
+    };
+    img.onerror = function() { resolve(dataURL); };
+    img.src = dataURL;
+  });
+}
+
 async function _callGroqSignboardVision(base64, mime) {
-  // GroqRotator auto-selects the next available key, handles 429 by switching keys
-  return GroqRotator.vision(SIGNBOARD_PROMPT, base64, mime, {
-    max_tokens: 500, temperature: 0,
+  // GroqRotator.vision returns a raw string — JSON.parse it into an object
+  const raw = await GroqRotator.vision(SIGNBOARD_PROMPT, base64, mime, {
+    max_tokens: 600, temperature: 0,
     response_format: { type: 'json_object' },
     reasoning_format: 'hidden'
   });
+  try {
+    const clean = (raw || '').replace(/```json|```/gi, '').trim();
+    return JSON.parse(clean);
+  } catch(e) {
+    console.warn('[signboard] JSON parse failed:', raw);
+    return {};
+  }
 }
 
 async function scanSignboard(event) {
@@ -1644,30 +1703,37 @@ async function scanSignboard(event) {
   event.target.value = '';
   const fb = document.getElementById('signboard-scan-fb');
   const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
-  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
-  if (!getGroqKey()) { show('❌ Groq key not loaded yet — wait a moment and try again.'); return; }
-  show('📸 Reading signboard...');
+  if (!navigator.onLine) { show('❌ No internet — connect and try again.'); return; }
+  show('📸 Reading signboard…');
   try {
     const reader = new FileReader();
-    const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
-    const compressed = await _compressImageSimple(dataURL, 800);
+    const dataURL = await new Promise((res, rej) => {
+      reader.onload = e => res(e.target.result);
+      reader.onerror = () => rej(new Error('Could not read image file'));
+      reader.readAsDataURL(file);
+    });
+    // Compress to max 900px before sending (saves bandwidth + speeds up Groq response)
+    const compressed = await _compressImageSimple(dataURL, 900);
     const base64 = compressed.split(',')[1];
     const result = await _callGroqSignboardVision(base64, 'image/jpeg');
 
     let filled = [];
-    if (result.name && $('s-name'))       { $('s-name').value = result.name; filled.push('name'); }
-    if (result.address && $('s-address')) { $('s-address').value = result.address; filled.push('address'); }
-    if (result.lga && $('s-lga'))         { $('s-lga').value = result.lga; filled.push('LGA'); }
-    if (result.state && $('s-state'))     { $('s-state').value = result.state; filled.push('state'); }
+    if (result.name    && $('s-name'))    { $('s-name').value    = result.name.trim();    filled.push('school name'); }
+    if (result.address && $('s-address')) { $('s-address').value = result.address.trim(); filled.push('address'); }
+    if (result.lga     && $('s-lga'))     { $('s-lga').value     = result.lga.trim();     filled.push('LGA'); }
+    if (result.state   && $('s-state'))   { $('s-state').value   = result.state.trim();   filled.push('state'); }
+    if (result.phone   && $('s-phone'))   { $('s-phone').value   = result.phone.trim();   filled.push('phone'); }
 
     if (filled.length) {
-      show('✅ Filled ' + filled.join(', ') + ' — please verify before submitting.');
+      show('✅ Filled: ' + filled.join(', ') + ' — verify before submitting');
+      setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
     } else {
-      show('⚠️ Could not read the signboard clearly — please fill in manually.');
+      show('⚠️ Signboard not clear enough — fill in manually or try a closer photo');
+      setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
     }
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
   } catch (e) {
-    show('❌ ' + (e.message || 'Could not read signboard. Try a clearer photo.'));
+    show('❌ ' + (e.message || 'Scan failed — try a closer, clearer photo'));
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
   }
 }
 
