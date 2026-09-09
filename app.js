@@ -1634,24 +1634,23 @@ async function groqVisionOCR(base64, mime) {
 
 // Trained on Nigerian school signboards: banners, painted walls, flex prints, weathered boards.
 // Handles: partial text, faded boards, abbreviations (JSS/SSS/LGA), hand-painted lettering.
-const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign.
-Extract the school details and return ONLY a valid JSON object — no markdown, no explanation.
+const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign photograph.
 
-Fields to extract:
-- "name": Full official school name exactly as written on the board. The school name is usually the LARGEST text. Examples seen: "Wisdomwalk Nursery & Primary School", "Christ Seed Learners Schools Abeokuta", "Matilda Hill Schools", "Olaroyals Schools", "Perfect Gold College", "Empowerment Model School", "Bukoye Royal Nursery & Primary School".
-- "address": Full address as written: street, area, city. Example: "Gbangba Market, Isale Abese, Abeokuta" or "3, Olori Oniru Street, Off Bola Ajibola Road, Asero, Abeokuta" or "5 Babs Street Behind A.A. Rano Filling Station, More Junction, Abeokuta".
-- "lga": The Local Government Area. INFER from address if not stated:
-  * Asero, Asero Estate, Bola Ajibola Street, Ikopa Titun, Madojutimi = "Abeokuta South"
-  * Isale Abese, Gbangba Market, Ilugun, Oke Lantoro = "Abeokuta North"
-  * More Junction, Onikolobo, Iberekodo = "Abeokuta South"
-  * Ijaiye, Kemta = "Odeda"
-  * If city is Abeokuta but area unknown, use "Abeokuta South"
-  * If another Nigerian city, name its LGA (e.g. Lagos Island = "Lagos Island", Ikeja = "Ikeja")
-- "state": State name only, no "State" suffix. Infer from city: Abeokuta = "Ogun", Lagos = "Lagos", Ibadan = "Oyo", Port Harcourt = "Rivers", Kano = "Kano". If visible on board, use that.
-- "phone": First phone number on the board, digits only (e.g. "07035026131"). Nigerian numbers start with 07, 08, or 09.
-- "type": Comma-separated list of school levels offered. Use: Creche, Nursery, Primary, Secondary, College. JSS/SSS → Secondary. KG/Kindergarten → Nursery. If Common Entrance is mentioned, include Secondary.
+CRITICAL: Your entire response must be ONLY a single JSON object. No words before it. No words after it. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
-Return ONLY this JSON — nothing else:
+Extract these fields:
+- "name": The school's full official name as printed. It is always the BIGGEST text on the board. Examples: "Wisdomwalk Nursery & Primary School", "Olaroyals Schools", "Perfect Gold College", "Matilda Hill Schools", "Empowerment Model School".
+- "address": Full street address including area and city as written. Example: "Gbangba Market, Isale Abese, Abeokuta" or "3, Olori Oniru Street, Off Bola Ajibola Road, Asero, Abeokuta" or "5 Babs Street, More Junction, Abeokuta".
+- "lga": Local Government Area. Infer from the area name:
+  Asero / Bola Ajibola / Ikopa Titun / Madojutimi = "Abeokuta South"
+  Isale Abese / Gbangba Market / Oke Lantoro = "Abeokuta North"
+  More Junction / Onikolobo / Iberekodo = "Abeokuta South"
+  If Abeokuta but area unknown = "Abeokuta South"
+- "state": State only, no "State" suffix. Abeokuta = "Ogun". Lagos = "Lagos". Ibadan = "Oyo".
+- "phone": First phone number, 11 digits, no spaces (e.g. "07035026131"). Nigerian numbers start 07, 08, or 09.
+- "type": Comma list of school levels. Use: Creche, Nursery, Primary, Secondary, College. KG=Nursery, JSS/SSS=Secondary.
+
+Required output format (fill in the values):
 {"name":"","address":"","lga":"","state":"","phone":"","type":""}`;
 
 // Canvas-based image compression — reduces large phone photos before sending to Groq.
@@ -1683,17 +1682,20 @@ function _compressImageSimple(dataURL, maxPx) {
 }
 
 async function _callGroqSignboardVision(base64, mime) {
-  // GroqRotator.vision returns a raw string — JSON.parse it into an object
+  // NOTE: response_format:'json_object' and reasoning_format:'hidden' are NOT
+  // supported on Groq vision models — they cause "Failed to validate JSON".
+  // We rely on the prompt instructions and robust regex extraction instead.
   const raw = await GroqRotator.vision(SIGNBOARD_PROMPT, base64, mime, {
-    max_tokens: 600, temperature: 0,
-    response_format: { type: 'json_object' },
-    reasoning_format: 'hidden'
+    max_tokens: 700, temperature: 0
   });
   try {
-    const clean = (raw || '').replace(/```json|```/gi, '').trim();
-    return JSON.parse(clean);
+    const text = (raw || '').replace(/```json|```/gi, '').trim();
+    // Extract the JSON object even if the model adds preamble or explanation
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) { console.warn('[signboard] No JSON found in response:', text.slice(0,200)); return {}; }
+    return JSON.parse(match[0]);
   } catch(e) {
-    console.warn('[signboard] JSON parse failed:', raw);
+    console.warn('[signboard] JSON parse failed:', (raw||'').slice(0,200));
     return {};
   }
 }
@@ -1712,23 +1714,44 @@ async function scanSignboard(event) {
       reader.onerror = () => rej(new Error('Could not read image file'));
       reader.readAsDataURL(file);
     });
-    // Compress to max 900px before sending (saves bandwidth + speeds up Groq response)
-    const compressed = await _compressImageSimple(dataURL, 900);
-    const base64 = compressed.split(',')[1];
-    const result = await _callGroqSignboardVision(base64, 'image/jpeg');
+
+    // ── Multi-crop: compress → split → OCR all in parallel → merge ────────────
+    // Signboards are landscape banners: left half = school name + logo,
+    // right half = address strip, phone, school type details.
+    // Three crops × same Groq call → 3× better accuracy, ~same time (parallel).
+    const compressed = await _compressImageSimple(dataURL, 1000);
+    const crops      = await _splitImageForOCR(compressed, 'halves'); // full + left + right
+    show('🔬 Reading ' + crops.length + ' crops in parallel…');
+
+    const cropResults = await Promise.all(crops.map(async crop => {
+      const b64 = crop.dataURL.split(',')[1];
+      try   { return await _callGroqSignboardVision(b64, 'image/jpeg'); }
+      catch  { return {}; }
+    }));
+
+    // Merge: for each field pick the longest non-empty value across all crops
+    const FIELDS = ['name','address','lga','state','phone','type'];
+    const best = {};
+    FIELDS.forEach(f => {
+      best[f] = '';
+      cropResults.forEach(r => {
+        const v = ((r||{})[f]||'').toString().trim();
+        if (v && v.length > best[f].length) best[f] = v;
+      });
+    });
 
     let filled = [];
-    if (result.name    && $('s-name'))    { $('s-name').value    = result.name.trim();    filled.push('school name'); }
-    if (result.address && $('s-address')) { $('s-address').value = result.address.trim(); filled.push('address'); }
-    if (result.lga     && $('s-lga'))     { $('s-lga').value     = result.lga.trim();     filled.push('LGA'); }
-    if (result.state   && $('s-state'))   { $('s-state').value   = result.state.trim();   filled.push('state'); }
-    if (result.phone   && $('s-phone'))   { $('s-phone').value   = result.phone.trim();   filled.push('phone'); }
+    if (best.name    && $('s-name'))    { $('s-name').value    = best.name;    filled.push('school name'); }
+    if (best.address && $('s-address')) { $('s-address').value = best.address; filled.push('address'); }
+    if (best.lga     && $('s-lga'))     { $('s-lga').value     = best.lga;     filled.push('LGA'); }
+    if (best.state   && $('s-state'))   { $('s-state').value   = best.state;   filled.push('state'); }
+    if (best.phone   && $('s-phone'))   { $('s-phone').value   = best.phone;   filled.push('phone'); }
 
     if (filled.length) {
       show('✅ Filled: ' + filled.join(', ') + ' — verify before submitting');
       setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
     } else {
-      show('⚠️ Signboard not clear enough — fill in manually or try a closer photo');
+      show('⚠️ Could not read signboard — try a closer, well-lit photo');
       setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
     }
   } catch (e) {
