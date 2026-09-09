@@ -1700,36 +1700,147 @@ async function _callGroqSignboardVision(base64, mime) {
   }
 }
 
+
+// ── OCR Progress Display ──────────────────────────────────────────────────────
+// Injects an animated step-by-step panel inside the signboard card so the
+// agent can see exactly what the OCR is doing at every moment.
+
+function _ocrProgressShow() {
+  // Inject keyframe CSS once
+  if (!document.getElementById('ocr-prog-style')) {
+    var s = document.createElement('style');
+    s.id = 'ocr-prog-style';
+    s.textContent = [
+      '@keyframes ocr-spin{to{transform:rotate(360deg)}}',
+      '@keyframes ocr-pulse{0%,100%{opacity:.5}50%{opacity:1}}',
+      '.ocr-prog{margin-top:10px;padding:13px 14px;',
+        'background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.12));',
+        'border:1.5px solid rgba(124,58,237,0.45);border-radius:12px;}',
+      '.ocr-prog-hd{display:flex;align-items:center;gap:9px;',
+        'font-size:0.83rem;font-weight:800;color:#a78bfa;margin-bottom:11px;}',
+      '.ocr-spin{width:15px;height:15px;border-radius:50%;flex-shrink:0;',
+        'border:2.5px solid rgba(167,139,250,0.25);border-top-color:#a78bfa;',
+        'animation:ocr-spin .75s linear infinite;}',
+      '.ocr-st{display:flex;align-items:flex-start;gap:9px;padding:6px 0;',
+        'border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.78rem;}',
+      '.ocr-st:last-child{border-bottom:none;}',
+      '.ocr-st-ic{width:18px;text-align:center;flex-shrink:0;font-size:0.82rem;line-height:1.4;}',
+      '.ocr-st-tx{color:var(--sub,#94a3b8);line-height:1.4;}',
+      '.ocr-st.active .ocr-st-tx{color:#c4b5fd;animation:ocr-pulse 1.1s ease-in-out infinite;font-weight:600;}',
+      '.ocr-st.done   .ocr-st-tx{color:#34d399;font-weight:700;}',
+      '.ocr-st.error  .ocr-st-tx{color:#f87171;font-weight:700;}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  _ocrProgressHide(); // clear any previous panel first
+
+  var panel = document.createElement('div');
+  panel.id  = 'ocr-prog';
+  panel.className = 'ocr-prog';
+  panel.innerHTML = [
+    '<div class="ocr-prog-hd">',
+      '<span class="ocr-spin"></span>',
+      'AI Reading Signboard&hellip;',
+    '</div>',
+    '<div id="ocr-s1" class="ocr-st">',
+      '<span class="ocr-st-ic">&#9633;</span>',
+      '<span class="ocr-st-tx">Compressing image</span>',
+    '</div>',
+    '<div id="ocr-s2" class="ocr-st">',
+      '<span class="ocr-st-ic">&#9633;</span>',
+      '<span class="ocr-st-tx">Splitting into crops</span>',
+    '</div>',
+    '<div id="ocr-s3" class="ocr-st">',
+      '<span class="ocr-st-ic">&#9633;</span>',
+      '<span class="ocr-st-tx">Reading crops in parallel</span>',
+    '</div>',
+    '<div id="ocr-s4" class="ocr-st">',
+      '<span class="ocr-st-ic">&#9633;</span>',
+      '<span class="ocr-st-tx">Merging best results</span>',
+    '</div>',
+  ].join('');
+
+  var card = document.getElementById('signboard-card');
+  if (card) card.appendChild(panel);
+}
+
+function _ocrProgressStep(id, state, text) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'ocr-st ' + (state || '');
+  var ic = el.querySelector('.ocr-st-ic');
+  var tx = el.querySelector('.ocr-st-tx');
+  if (ic) ic.textContent = state === 'done' ? '✅' : state === 'error' ? '❌' : '⏳';
+  if (tx && text) tx.textContent = text;
+}
+
+function _ocrProgressHide() {
+  var p = document.getElementById('ocr-prog');
+  if (p) p.remove();
+}
+// ── End OCR Progress Display ──────────────────────────────────────────────────
+
 async function scanSignboard(event) {
   const file = event.target.files[0]; if (!file) return;
   event.target.value = '';
-  const fb = document.getElementById('signboard-scan-fb');
-  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
-  if (!navigator.onLine) { show('❌ No internet — connect and try again.'); return; }
-  show('📸 Reading signboard…');
+
+  // ── Show animated progress panel, hide button ─────────────────────────────
+  const scanBtn = document.querySelector('#signboard-card button');
+  const fb      = document.getElementById('signboard-scan-fb');
+  if (scanBtn) scanBtn.style.display = 'none';
+  if (fb)      fb.style.display = 'none';
+  _ocrProgressShow();
+
+  const done = (ok, msg) => {
+    // After a short pause, remove progress panel and restore button
+    setTimeout(() => {
+      _ocrProgressHide();
+      if (scanBtn) scanBtn.style.display = '';
+      if (fb) {
+        fb.style.display  = 'block';
+        fb.style.color    = ok ? '#34d399' : '#f87171';
+        fb.textContent    = msg;
+        setTimeout(() => { if (fb) { fb.style.display = 'none'; fb.style.color = ''; } }, 6000);
+      }
+    }, 1600);
+  };
+
+  if (!navigator.onLine) {
+    _ocrProgressStep('ocr-s1','error','No internet — connect and try again');
+    done(false, '❌ No internet connection');
+    return;
+  }
+
   try {
-    const reader = new FileReader();
+    // ── Step 1: Compress ─────────────────────────────────────────────────────
+    _ocrProgressStep('ocr-s1','active','Compressing image…');
+    const reader  = new FileReader();
     const dataURL = await new Promise((res, rej) => {
-      reader.onload = e => res(e.target.result);
+      reader.onload  = e => res(e.target.result);
       reader.onerror = () => rej(new Error('Could not read image file'));
       reader.readAsDataURL(file);
     });
-
-    // ── Multi-crop: compress → split → OCR all in parallel → merge ────────────
-    // Signboards are landscape banners: left half = school name + logo,
-    // right half = address strip, phone, school type details.
-    // Three crops × same Groq call → 3× better accuracy, ~same time (parallel).
     const compressed = await _compressImageSimple(dataURL, 1000);
-    const crops      = await _splitImageForOCR(compressed, 'halves'); // full + left + right
-    show('🔬 Reading ' + crops.length + ' crops in parallel…');
+    _ocrProgressStep('ocr-s1','done','Image compressed ✓');
 
+    // ── Step 2: Split ─────────────────────────────────────────────────────────
+    _ocrProgressStep('ocr-s2','active','Splitting into crops…');
+    const crops = await _splitImageForOCR(compressed, 'halves'); // full + left + right
+    _ocrProgressStep('ocr-s2','done', crops.length + ' crops ready ✓');
+
+    // ── Step 3: Parallel OCR ──────────────────────────────────────────────────
+    _ocrProgressStep('ocr-s3','active','Reading ' + crops.length + ' crops in parallel…');
     const cropResults = await Promise.all(crops.map(async crop => {
       const b64 = crop.dataURL.split(',')[1];
       try   { return await _callGroqSignboardVision(b64, 'image/jpeg'); }
       catch  { return {}; }
     }));
+    const okCount = cropResults.filter(r => r && (r.name || r.address)).length;
+    _ocrProgressStep('ocr-s3','done', okCount + '/' + crops.length + ' crops read ✓');
 
-    // Merge: for each field pick the longest non-empty value across all crops
+    // ── Step 4: Merge & fill ──────────────────────────────────────────────────
+    _ocrProgressStep('ocr-s4','active','Merging best results…');
     const FIELDS = ['name','address','lga','state','phone','type'];
     const best = {};
     FIELDS.forEach(f => {
@@ -1740,7 +1851,7 @@ async function scanSignboard(event) {
       });
     });
 
-    let filled = [];
+    const filled = [];
     if (best.name    && $('s-name'))    { $('s-name').value    = best.name;    filled.push('school name'); }
     if (best.address && $('s-address')) { $('s-address').value = best.address; filled.push('address'); }
     if (best.lga     && $('s-lga'))     { $('s-lga').value     = best.lga;     filled.push('LGA'); }
@@ -1748,15 +1859,15 @@ async function scanSignboard(event) {
     if (best.phone   && $('s-phone'))   { $('s-phone').value   = best.phone;   filled.push('phone'); }
 
     if (filled.length) {
-      show('✅ Filled: ' + filled.join(', ') + ' — verify before submitting');
-      setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
+      _ocrProgressStep('ocr-s4','done','Filled: ' + filled.join(', ') + ' ✓');
+      done(true, '✅ ' + filled.join(', ') + ' — verify before submitting');
     } else {
-      show('⚠️ Could not read signboard — try a closer, well-lit photo');
-      setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+      _ocrProgressStep('ocr-s4','error','No data extracted — try a closer photo');
+      done(false, '⚠️ Signboard not readable — try a closer, well-lit photo');
     }
-  } catch (e) {
-    show('❌ ' + (e.message || 'Scan failed — try a closer, clearer photo'));
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
+  } catch(e) {
+    _ocrProgressStep('ocr-s4','error', e.message || 'Scan failed');
+    done(false, '❌ ' + (e.message || 'Scan failed — try again'));
   }
 }
 
