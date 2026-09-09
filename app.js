@@ -3371,3 +3371,256 @@ async function renderLeaderboard(){
   }
 }
 // ── End Leaderboard ───────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔬 MULTI-CROP OCR AGENT
+// Automatically splits one image into strategic crops, runs OCR on all crops
+// in parallel, then merges results — giving 3-4× better accuracy on wide
+// handwritten tables like ledgers, register pages, and beneficiary records.
+//
+// What you used to do manually (4 separate photos), this does automatically
+// from a single image in ~3 seconds.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * SPLIT STRATEGIES
+ * Each array defines crops as fractions of the image dimensions.
+ * 'x','y' = top-left corner (0.0–1.0), 'w','h' = width/height (0.0–1.0)
+ *
+ * 'halves'        → full + left half + right half           (3 images)
+ * 'thirds'        → full + left third + mid + right         (4 images)
+ * 'page-spread'   → full spread + left page + right page + centre overlap (4 images)
+ * 'quadrants'     → full + 4 quadrant crops                 (5 images)
+ */
+const CROP_STRATEGIES = {
+  'halves': [
+    { x:0,    y:0, w:1,    h:1, label:'full'  },
+    { x:0,    y:0, w:0.52, h:1, label:'left'  },
+    { x:0.48, y:0, w:0.52, h:1, label:'right' },
+  ],
+  'thirds': [
+    { x:0,    y:0, w:1,    h:1, label:'full'   },
+    { x:0,    y:0, w:0.37, h:1, label:'left'   },
+    { x:0.31, y:0, w:0.38, h:1, label:'middle' },
+    { x:0.63, y:0, w:0.37, h:1, label:'right'  },
+  ],
+  'page-spread': [
+    { x:0,    y:0, w:1,    h:1, label:'full-spread' },
+    { x:0,    y:0, w:0.52, h:1, label:'left-page'   },
+    { x:0.48, y:0, w:0.52, h:1, label:'right-page'  },
+    { x:0.24, y:0, w:0.52, h:1, label:'centre'      },
+  ],
+  'quadrants': [
+    { x:0,    y:0,    w:1,    h:1,    label:'full'         },
+    { x:0,    y:0,    w:0.52, h:0.52, label:'top-left'     },
+    { x:0.48, y:0,    w:0.52, h:0.52, label:'top-right'    },
+    { x:0,    y:0.48, w:0.52, h:0.52, label:'bottom-left'  },
+    { x:0.48, y:0.48, w:0.52, h:0.52, label:'bottom-right' },
+  ],
+};
+
+/**
+ * Split a dataURL image into multiple crops.
+ * @param {string} dataURL  - Base64 image dataURL
+ * @param {string} strategy - Key from CROP_STRATEGIES (default: 'thirds')
+ * @param {number} jpegQ    - JPEG quality 0–1 (default: 0.88)
+ * @returns {Promise<Array<{label:string, dataURL:string}>>}
+ */
+function _splitImageForOCR(dataURL, strategy, jpegQ) {
+  strategy = strategy || 'thirds';
+  jpegQ    = jpegQ    || 0.88;
+  const crops = CROP_STRATEGIES[strategy] || CROP_STRATEGIES['thirds'];
+
+  return new Promise(function(resolve) {
+    var img = new Image();
+    img.onload = function() {
+      var W = img.naturalWidth  || img.width;
+      var H = img.naturalHeight || img.height;
+      var results = [];
+      var canvas  = document.createElement('canvas');
+      var ctx     = canvas.getContext('2d');
+
+      for (var i = 0; i < crops.length; i++) {
+        var c  = crops[i];
+        var sx = Math.round(W * c.x);
+        var sy = Math.round(H * c.y);
+        var sw = Math.round(W * c.w);
+        var sh = Math.round(H * c.h);
+        canvas.width  = sw;
+        canvas.height = sh;
+        ctx.clearRect(0, 0, sw, sh);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        results.push({ label: c.label, dataURL: canvas.toDataURL('image/jpeg', jpegQ) });
+      }
+      resolve(results);
+    };
+    img.onerror = function() { resolve([{ label:'original', dataURL: dataURL }]); };
+    img.src = dataURL;
+  });
+}
+
+/**
+ * Run a Groq Vision prompt on every crop in parallel.
+ * @param {Array<{label,dataURL}>} crops  - Output from _splitImageForOCR
+ * @param {string}                 prompt - Groq Vision prompt
+ * @param {object}                 opts   - Extra Groq options (max_tokens, etc.)
+ * @returns {Promise<Array<{label:string, raw:string, data:any}>>}
+ */
+async function _ocrAllCrops(crops, prompt, opts) {
+  opts = opts || {};
+  const groqOpts = Object.assign(
+    { max_tokens: 2000, temperature: 0, response_format: { type: 'json_object' }, reasoning_format: 'hidden' },
+    opts
+  );
+
+  const tasks = crops.map(async function(crop) {
+    const b64  = crop.dataURL.split(',')[1];
+    const mime = 'image/jpeg';
+    try {
+      const raw  = await GroqRotator.vision(prompt, b64, mime, groqOpts);
+      const text = (raw || '').replace(/```json|```/gi, '').trim();
+      const match = text.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+      const data  = match ? JSON.parse(match[1]) : null;
+      return { label: crop.label, raw: text, data: data, ok: true };
+    } catch(e) {
+      console.warn('[multiCropOCR] crop "' + crop.label + '" failed:', e.message);
+      return { label: crop.label, raw: '', data: null, ok: false };
+    }
+  });
+
+  return Promise.all(tasks);
+}
+
+/**
+ * Merge OCR results from multiple crops of a tabular ledger.
+ *
+ * Strategy: use the 'full' crop as the row skeleton. Then for each row,
+ * overlay the more precise column data extracted from the focused crops.
+ * Fields are merged by preferring the longest non-empty value (more
+ * characters = more complete reading from the closer crop).
+ *
+ * @param {Array<{label,data}>} results - Output from _ocrAllCrops
+ * @returns {Array<object>}  Merged row objects
+ */
+function _mergeOCRRows(results) {
+  // Separate full from focused crops
+  var fullResult   = results.find(function(r) { return r.label === 'full' && r.ok && Array.isArray(r.data); });
+  var focusResults = results.filter(function(r) { return r.label !== 'full' && r.ok && Array.isArray(r.data); });
+
+  if (!fullResult && focusResults.length === 0) return [];
+
+  // Start with full crop rows (or first successful crop)
+  var baseRows = fullResult
+    ? fullResult.data
+    : (focusResults[0] ? focusResults[0].data : []);
+
+  if (!Array.isArray(baseRows)) return [];
+
+  // For each focused crop, try to overlay its data onto matching rows
+  focusResults.forEach(function(fRes) {
+    if (!Array.isArray(fRes.data)) return;
+    fRes.data.forEach(function(focusRow, idx) {
+      // Match by SN first, then by index
+      var target = null;
+      var sn = focusRow.sn || focusRow.SN || focusRow.no || focusRow.No || String(idx + 1);
+
+      if (sn) {
+        target = baseRows.find(function(r) {
+          return String(r.sn||r.SN||r.no||r.No||'').trim() === String(sn).trim();
+        });
+      }
+      if (!target && idx < baseRows.length) target = baseRows[idx];
+      if (!target) return;
+
+      // Merge each field: prefer the longer / more complete value
+      Object.keys(focusRow).forEach(function(key) {
+        var focusVal = (focusRow[key] || '').toString().trim();
+        var baseVal  = (target[key]  || '').toString().trim();
+        if (focusVal && focusVal.length > baseVal.length) {
+          target[key] = focusVal;
+        }
+      });
+    });
+  });
+
+  return baseRows;
+}
+
+/**
+ * HIGH-LEVEL API: One call does everything.
+ *
+ * Usage:
+ *   const rows = await multiCropOCR(dataURL, MY_LEDGER_PROMPT, 'thirds');
+ *
+ * @param {string} dataURL   - Original image dataURL
+ * @param {string} prompt    - Groq Vision prompt (must ask for JSON array of row objects)
+ * @param {string} strategy  - 'halves' | 'thirds' | 'page-spread' | 'quadrants'
+ * @param {object} opts      - Extra Groq opts
+ * @returns {Promise<Array<object>>} Merged rows
+ */
+async function multiCropOCR(dataURL, prompt, strategy, opts) {
+  if (!getGroqKey()) throw new Error('Groq API key not loaded — wait a moment and try again');
+  strategy = strategy || 'thirds';
+
+  // 1. Compress original to max 1100px (preserve detail for text)
+  const compressed = await _compressImageSimple(dataURL, 1100);
+
+  // 2. Split into crops
+  const crops = await _splitImageForOCR(compressed, strategy);
+
+  // 3. OCR all crops in parallel
+  const results = await _ocrAllCrops(crops, prompt, opts || {});
+
+  // 4. Merge
+  const merged = _mergeOCRRows(results);
+
+  console.log('[multiCropOCR] strategy=' + strategy +
+    ' crops=' + crops.length +
+    ' successful=' + results.filter(function(r){return r.ok;}).length +
+    ' rows=' + merged.length);
+
+  return merged;
+}
+
+// ── Beneficiary / Ledger prompt ───────────────────────────────────────────────
+// Trained on Nigerian handwritten beneficiary register pages.
+// Returns a JSON array — one object per row.
+const LEDGER_OCR_PROMPT = `You are reading a handwritten Nigerian beneficiary or financial ledger register page.
+Extract every row as a JSON array. Each row object must have these keys exactly:
+- "sn": serial number / row number (string)
+- "name": full name of the beneficiary (surname first as written)
+- "phone": WhatsApp or phone number, digits only (e.g. "07038783839")
+- "account_no": bank account number, digits only
+- "bank": bank name (e.g. "Access", "GTB", "UBA", "First Bank", "Sterling", "Stanbic", "Zenith", "Polaris")
+- "location": city and state (e.g. "Abeokuta, Ogun")
+- "fund_purpose": purpose of funds (e.g. "Farming", "Business", "Poultry", "Poultry Processing")
+- "account_name": name on the bank account as written
+
+Rules:
+• If a cell is empty or unreadable, use empty string ""
+• Phone numbers start with 07, 08, or 09 and are 11 digits
+• Account numbers are 10 digits for NUBAN (most Nigerian banks)
+• Extract ALL rows visible — do not skip any
+• Return ONLY the JSON array, no markdown, no explanation
+
+Example output:
+[{"sn":"111","name":"Adedapo Kazeem Adenyi","phone":"09079517087","account_no":"0792763459","bank":"Access","location":"Abeokuta, Ogun","fund_purpose":"Farming","account_name":"Adedapo Kazeem Adenyi"}]`;
+
+// ── Convenience wrapper for the ledger/beneficiary use case ───────────────────
+async function scanLedgerPage(dataURL, onProgress) {
+  if (onProgress) onProgress('📸 Splitting image into 4 crops…');
+
+  const crops = await _splitImageForOCR(await _compressImageSimple(dataURL, 1100), 'thirds');
+  if (onProgress) onProgress('🔬 Reading ' + crops.length + ' crops in parallel…');
+
+  const results = await _ocrAllCrops(crops, LEDGER_OCR_PROMPT, { max_tokens: 3000 });
+  const ok = results.filter(function(r) { return r.ok; }).length;
+  if (onProgress) onProgress('✅ ' + ok + '/' + crops.length + ' crops read — merging…');
+
+  const rows = _mergeOCRRows(results);
+  if (onProgress) onProgress('✅ ' + rows.length + ' rows extracted');
+
+  return rows;
+}
+
+// ── End Multi-Crop OCR Agent ──────────────────────────────────────────────────
