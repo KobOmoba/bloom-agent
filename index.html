@@ -137,7 +137,7 @@
         <p style="font-size:0.82rem;color:var(--sub);margin-bottom:1rem;">Fill in the school details. Bayo reviews and approves. You earn on approval.</p>
 
         <!-- ═══ NEW: SIGNBOARD SCAN — auto-fills name/address/LGA/state ═══ -->
-        <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1.5px solid rgba(124,58,237,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
+        <div id="signboard-card" style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1.5px solid rgba(124,58,237,0.3);border-radius:14px;padding:1rem;margin-bottom:0.85rem;">
           <div style="font-weight:800;font-size:0.85rem;color:#a78bfa;margin-bottom:0.4rem;">📸 Scan School Signboard</div>
           <p style="font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;line-height:1.5;">Photograph the school's signboard — AI reads the name, address, LGA and state automatically.</p>
           <input type="file" id="signboard-input" accept="image/*" style="display:none;" onchange="scanSignboard(event)">
