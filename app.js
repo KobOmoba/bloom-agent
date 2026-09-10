@@ -1634,12 +1634,12 @@ async function groqVisionOCR(base64, mime) {
 
 // Trained on Nigerian school signboards: banners, painted walls, flex prints, weathered boards.
 // Handles: partial text, faded boards, abbreviations (JSS/SSS/LGA), hand-painted lettering.
-const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign photograph.
+const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign photograph. The board may be simple or decorative, printed or hand-painted, clean or weathered, and may contain cartoon characters, student photos, or colourful graphics — ignore the graphics and focus only on the text.
 
-CRITICAL: Your entire response must be ONLY a single JSON object. No words before it. No words after it. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
+CRITICAL INSTRUCTION: Your ENTIRE response must be ONLY a single JSON object — nothing before the opening { and nothing after the closing }. No markdown. No explanation. No preamble. If you cannot read a field, use empty string "". Never refuse to respond — always return the JSON object even if some fields are empty.
 
 Extract these fields:
-- "name": The school's full official name as printed. It is always the BIGGEST text on the board. Examples: "Wisdomwalk Nursery & Primary School", "Olaroyals Schools", "Perfect Gold College", "Matilda Hill Schools", "Empowerment Model School".
+- "name": The school's full official name as printed. It is ALWAYS the biggest text on the board regardless of colour — it may be dark red, dark blue, green, or any colour. Include the school type if part of the name (e.g. "Nursery & Primary School", "Comprehensive College", "Academy"). Examples: "Wisdomwalk Nursery & Primary School", "Future Promise Comprehensive College", "Olaroyals Schools", "Perfect Gold College".
 - "address": Full street address including area and city as written. Example: "Gbangba Market, Isale Abese, Abeokuta" or "3, Olori Oniru Street, Off Bola Ajibola Road, Asero, Abeokuta" or "5 Babs Street, More Junction, Abeokuta".
 - "lga": Local Government Area. Infer from the area name:
   Asero / Bola Ajibola / Ikopa Titun / Madojutimi = "Abeokuta South"
@@ -1821,13 +1821,13 @@ async function scanSignboard(event) {
       reader.onerror = () => rej(new Error('Could not read image file'));
       reader.readAsDataURL(file);
     });
-    const compressed = await _compressImageSimple(dataURL, 1000);
+    const compressed = await _compressImageSimple(dataURL, 1200); // larger = more detail in address strips
     _ocrProgressStep('ocr-s1','done','Image compressed ✓');
 
     // ── Step 2: Split ─────────────────────────────────────────────────────────
     _ocrProgressStep('ocr-s2','active','Splitting into crops…');
-    const crops = await _splitImageForOCR(compressed, 'halves'); // full + left + right
-    _ocrProgressStep('ocr-s2','done', crops.length + ' crops ready ✓');
+    const crops = await _splitImageForOCR(compressed, 'signboard'); // full + top-name + bottom-addr + left
+    _ocrProgressStep('ocr-s2','done', crops.length + ' crops: name, address, full, left ✓');
 
     // ── Step 3: Parallel OCR ──────────────────────────────────────────────────
     _ocrProgressStep('ocr-s3','active','Reading ' + crops.length + ' crops in parallel…');
@@ -3531,6 +3531,18 @@ const CROP_STRATEGIES = {
     { x:0,    y:0, w:1,    h:1, label:'full'  },
     { x:0,    y:0, w:0.52, h:1, label:'left'  },
     { x:0.48, y:0, w:0.52, h:1, label:'right' },
+  ],
+  // ── Signboard-specific: cross strategy (vertical + horizontal) ────────────
+  // School name is almost always in the top 35% of a signboard.
+  // Address and phone are almost always in the bottom 35%.
+  // Adding horizontal crops gives the model a zoomed-in view of each region,
+  // dramatically improving accuracy on complex coloured banners and on boards
+  // where the address is white-on-dark (hard to read in a full compressed image).
+  'signboard': [
+    { x:0,  y:0,    w:1,    h:1,    label:'full'        }, // whole board
+    { x:0,  y:0,    w:1,    h:0.42, label:'top-name'    }, // top 42%: school name header
+    { x:0,  y:0.58, w:1,    h:0.42, label:'bottom-addr' }, // bottom 42% (overlap): address+phone
+    { x:0,  y:0,    w:0.55, h:1,    label:'left-half'   }, // left 55%: name + left address
   ],
   'thirds': [
     { x:0,    y:0, w:1,    h:1, label:'full'   },
