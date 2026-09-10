@@ -496,11 +496,13 @@ const GroqRotator = (() => {
     },
 
     // Vision / image call — OCR, ledger scan, signboard, register, score sheets
+    // NOTE: Do NOT default reasoning_format here — Groq vision models reject it and
+    // return "Failed to validate JSON". Only pass it if the caller explicitly sets it.
     vision(prompt, base64, mime, opts = {}) {
       return _call({
         model: opts.model || _model(),
         max_tokens: opts.max_tokens || 1600,
-        reasoning_format: opts.reasoning_format || 'hidden',
+        ...(opts.reasoning_format ? { reasoning_format: opts.reasoning_format } : {}),
         ...(opts.temperature != null ? { temperature: opts.temperature } : {}),
         ...(opts.response_format   ? { response_format: opts.response_format } : {}),
         messages: [
@@ -1749,15 +1751,11 @@ function _ocrProgressShow() {
     '</div>',
     '<div id="ocr-s2" class="ocr-st">',
       '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Splitting into crops</span>',
+      '<span class="ocr-st-tx">Reading signboard with AI</span>',
     '</div>',
     '<div id="ocr-s3" class="ocr-st">',
       '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Reading crops in parallel</span>',
-    '</div>',
-    '<div id="ocr-s4" class="ocr-st">',
-      '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Merging best results</span>',
+      '<span class="ocr-st-tx">Filling form fields</span>',
     '</div>',
   ].join('');
 
@@ -1821,52 +1819,38 @@ async function scanSignboard(event) {
       reader.onerror = () => rej(new Error('Could not read image file'));
       reader.readAsDataURL(file);
     });
-    const compressed = await _compressImageSimple(dataURL, 1200); // larger = more detail in address strips
+    // 800px is the field-tested sweet spot — sufficient detail, fast transfer.
+    // Do NOT split into multiple crops: parallel Groq calls exhaust the rate-limit
+    // budget and cause ledger OCR to queue behind 20–60 s waits and fall to HuggingFace.
+    const compressed = await _compressImageSimple(dataURL, 800);
+    const base64 = compressed.split(',')[1];
     _ocrProgressStep('ocr-s1','done','Image compressed ✓');
 
-    // ── Step 2: Split ─────────────────────────────────────────────────────────
-    _ocrProgressStep('ocr-s2','active','Splitting into crops…');
-    const crops = await _splitImageForOCR(compressed, 'signboard'); // full + top-name + bottom-addr + left
-    _ocrProgressStep('ocr-s2','done', crops.length + ' crops: name, address, full, left ✓');
+    // ── Step 2: Single Groq vision call ──────────────────────────────────────
+    _ocrProgressStep('ocr-s2','active','Reading signboard with AI…');
+    const result = await _callGroqSignboardVision(base64, 'image/jpeg');
+    const okRead = !!(result && (result.name || result.address));
+    _ocrProgressStep('ocr-s2', okRead ? 'done' : 'error',
+      okRead ? 'Signboard read ✓' : 'No text found — try a closer photo');
 
-    // ── Step 3: Parallel OCR ──────────────────────────────────────────────────
-    _ocrProgressStep('ocr-s3','active','Reading ' + crops.length + ' crops in parallel…');
-    const cropResults = await Promise.all(crops.map(async crop => {
-      const b64 = crop.dataURL.split(',')[1];
-      try   { return await _callGroqSignboardVision(b64, 'image/jpeg'); }
-      catch  { return {}; }
-    }));
-    const okCount = cropResults.filter(r => r && (r.name || r.address)).length;
-    _ocrProgressStep('ocr-s3','done', okCount + '/' + crops.length + ' crops read ✓');
-
-    // ── Step 4: Merge & fill ──────────────────────────────────────────────────
-    _ocrProgressStep('ocr-s4','active','Merging best results…');
-    const FIELDS = ['name','address','lga','state','phone','type'];
-    const best = {};
-    FIELDS.forEach(f => {
-      best[f] = '';
-      cropResults.forEach(r => {
-        const v = ((r||{})[f]||'').toString().trim();
-        if (v && v.length > best[f].length) best[f] = v;
-      });
-    });
-
+    // ── Step 3: Fill form fields ──────────────────────────────────────────────
+    _ocrProgressStep('ocr-s3','active','Filling form fields…');
     const filled = [];
-    if (best.name    && $('s-name'))    { $('s-name').value    = best.name;    filled.push('school name'); }
-    if (best.address && $('s-address')) { $('s-address').value = best.address; filled.push('address'); }
-    if (best.lga     && $('s-lga'))     { $('s-lga').value     = best.lga;     filled.push('LGA'); }
-    if (best.state   && $('s-state'))   { $('s-state').value   = best.state;   filled.push('state'); }
-    if (best.phone   && $('s-phone'))   { $('s-phone').value   = best.phone;   filled.push('phone'); }
+    if (result.name    && $('s-name'))    { $('s-name').value    = result.name;    filled.push('school name'); }
+    if (result.address && $('s-address')) { $('s-address').value = result.address; filled.push('address'); }
+    if (result.lga     && $('s-lga'))     { $('s-lga').value     = result.lga;     filled.push('LGA'); }
+    if (result.state   && $('s-state'))   { $('s-state').value   = result.state;   filled.push('state'); }
+    if (result.phone   && $('s-phone'))   { $('s-phone').value   = result.phone;   filled.push('phone'); }
 
     if (filled.length) {
-      _ocrProgressStep('ocr-s4','done','Filled: ' + filled.join(', ') + ' ✓');
+      _ocrProgressStep('ocr-s3','done','Filled: ' + filled.join(', ') + ' ✓');
       done(true, '✅ ' + filled.join(', ') + ' — verify before submitting');
     } else {
-      _ocrProgressStep('ocr-s4','error','No data extracted — try a closer photo');
+      _ocrProgressStep('ocr-s3','error','No data extracted — try a closer photo');
       done(false, '⚠️ Signboard not readable — try a closer, well-lit photo');
     }
   } catch(e) {
-    _ocrProgressStep('ocr-s4','error', e.message || 'Scan failed');
+    _ocrProgressStep('ocr-s3','error', e.message || 'Scan failed');
     done(false, '❌ ' + (e.message || 'Scan failed — try again'));
   }
 }
@@ -3770,3 +3754,4 @@ async function scanLedgerPage(dataURL, onProgress) {
 }
 
 // ── End Multi-Crop OCR Agent ──────────────────────────────────────────────────
+
