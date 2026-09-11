@@ -1617,13 +1617,41 @@ async function groqVisionOCR(base64, mime) {
   const raw = await GroqRotator.vision(GROQ_OCR_PROMPT, base64, mime, {
     max_tokens: 4096, temperature: 0.2, reasoning_format: 'hidden'
   });
-  // Parse the name list from response
-  const lines = raw.split('\n').map(l => l.trim()).filter(l =>
-    l && !l.startsWith('{') && !l.startsWith('[') &&
-    !/^(name|student|s\/n|sn|no\.?|#)/i.test(l)
+
+  // Strip any <think> reasoning tags the model may include
+  const cleaned = (raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // ── 1. JSON parse — GROQ_OCR_PROMPT requests JSON and qwen/qwen3.6-27b
+  //    delivers it reliably. The OLD line-parser was filtering lines that start
+  //    with '{' or '[', so every Groq call silently returned 0 names and the
+  //    cascade fell straight through to HuggingFace (slower, less accurate). ──
+  try {
+    const jsonStr = cleaned.replace(/```json|```/gi, '').trim();
+    const match   = jsonStr.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed.names) && parsed.names.length) {
+        if (parsed.detected_class) window._lastDetectedClass = parsed.detected_class;
+        return parsed.names
+          .map(n => n.toString().trim().replace(/^["']|["']$/g, ''))
+          .filter(n => n.length >= 3)
+          .map(n => {
+            const parts = n.split(/\s+/);
+            return { surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '', fullName: n };
+          });
+      }
+    }
+  } catch(e) {
+    console.warn('[groqVisionOCR] JSON parse failed — using line parser:', e.message);
+  }
+
+  // ── 2. Fallback: plain-text line parser for non-JSON / partial responses ──
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(l =>
+    l && !l.startsWith('{') && !l.startsWith('[') && !l.startsWith('<') &&
+    !/^(name|student|s\/n|sn|no\.?|#|detected_class)/i.test(l)
   );
   return lines.map(l => {
-    const clean = l.replace(/^[\d]+[.)\s]+/, '').trim();
+    const clean = l.replace(/^[\d]+[.)\s]+/, '').replace(/^["']|["'],?$/g, '').trim();
     const parts = clean.split(/\s+/);
     return {
       surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '',
