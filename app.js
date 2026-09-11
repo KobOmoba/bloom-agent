@@ -1615,7 +1615,7 @@ async function ocrSpaceOCR(base64, mime) {
 async function groqVisionOCR(base64, mime) {
   // Rotated through GroqRotator — register OCR
   const raw = await GroqRotator.vision(GROQ_OCR_PROMPT, base64, mime, {
-    max_tokens: 4096, temperature: 0.2, reasoning_format: 'hidden'
+    max_tokens: 4096, temperature: 0.2
   });
 
   // Strip any <think> reasoning tags the model may include
@@ -3627,7 +3627,7 @@ function _splitImageForOCR(dataURL, strategy, jpegQ) {
 async function _ocrAllCrops(crops, prompt, opts) {
   opts = opts || {};
   const groqOpts = Object.assign(
-    { max_tokens: 2000, temperature: 0, response_format: { type: 'json_object' }, reasoning_format: 'hidden' },
+    { max_tokens: 2000, temperature: 0, response_format: { type: 'json_object' } },
     opts
   );
 
