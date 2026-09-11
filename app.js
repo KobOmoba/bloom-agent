@@ -1612,278 +1612,198 @@ async function ocrSpaceOCR(base64, mime) {
   }
 }
 
-async function groqVisionOCR(base64, mime) {
-  // Rotated through GroqRotator — register OCR
-  const raw = await GroqRotator.vision(GROQ_OCR_PROMPT, base64, mime, {
-    max_tokens: 4096, temperature: 0.2
-  });
-
-  // Strip any <think> reasoning tags the model may include
-  const cleaned = (raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-  // ── 1. JSON parse — GROQ_OCR_PROMPT requests JSON and qwen/qwen3.6-27b
-  //    delivers it reliably. The OLD line-parser was filtering lines that start
-  //    with '{' or '[', so every Groq call silently returned 0 names and the
-  //    cascade fell straight through to HuggingFace (slower, less accurate). ──
+async function groqVisionOCR(base64, mime, _retry) {
+  if (_retry === undefined) _retry = 0;
+  const apiKey = getGroqKey();
+  if (!apiKey) throw new Error('No Groq API key');
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), 45000);
+  let resp;
   try {
-    const jsonStr = cleaned.replace(/```json|```/gi, '').trim();
-    const match   = jsonStr.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      if (Array.isArray(parsed.names) && parsed.names.length) {
-        if (parsed.detected_class) window._lastDetectedClass = parsed.detected_class;
-        return parsed.names
-          .map(n => n.toString().trim().replace(/^["']|["']$/g, ''))
-          .filter(n => n.length >= 3)
-          .map(n => {
-            const parts = n.split(/\s+/);
-            return { surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '', fullName: n };
-          });
-      }
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({
+        model: GROQ_OCR_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+          { type: 'text', text: GROQ_OCR_PROMPT }
+        ]}],
+        temperature: 0.2, max_tokens: 600,
+        reasoning_effort: 'none',
+        response_format: { type: 'json_object' }
+      })
+    });
+    clearTimeout(fetchTimer);
+  } catch (fetchErr) {
+    clearTimeout(fetchTimer);
+    if (fetchErr.name === 'AbortError') {
+      if (_retry >= 2) throw new Error('Groq timed out — page skipped (slow connection or server busy)');
+      const ld = document.getElementById('csv-loading');
+      for (let s = 25; s > 0; s--) { if (ld) ld.textContent = '\u23f3 Groq slow — retrying in ' + s + 's... (' + (_retry+1) + '/2)'; await new Promise(r => setTimeout(r, 1000)); }
+      return groqVisionOCR(base64, mime, _retry + 1);
     }
-  } catch(e) {
-    console.warn('[groqVisionOCR] JSON parse failed — using line parser:', e.message);
+    if (_retry < 2) {
+      const ld = document.getElementById('csv-loading');
+      for (let s = 15; s > 0; s--) { if (ld) ld.textContent = '\u23f3 Network error — retrying in ' + s + 's... (' + (_retry+1) + '/2)'; await new Promise(r => setTimeout(r, 1000)); }
+      return groqVisionOCR(base64, mime, _retry + 1);
+    }
+    throw fetchErr;
   }
-
-  // ── 2. Fallback: plain-text line parser for non-JSON / partial responses ──
-  const lines = cleaned.split('\n').map(l => l.trim()).filter(l =>
-    l && !l.startsWith('{') && !l.startsWith('[') && !l.startsWith('<') &&
-    !/^(name|student|s\/n|sn|no\.?|#|detected_class)/i.test(l)
-  );
-  return lines.map(l => {
-    const clean = l.replace(/^[\d]+[.)\s]+/, '').replace(/^["']|["'],?$/g, '').trim();
-    const parts = clean.split(/\s+/);
-    return {
-      surname: parts[0] || '', firstname: parts.slice(1).join(' ') || '',
-      fullName: clean
-    };
-  }).filter(s => s.fullName.length >= 3);
+  try {
+    if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
+      if (_retry >= 2) {
+        const errData = await resp.json().catch(() => ({}));
+        if (resp.status === 429) _groqRateLimitedThisSession = true;
+        throw new Error((errData.error && errData.error.message) || 'Groq unavailable — page skipped, try rescanning.');
+      }
+      const is429    = resp.status === 429;
+      const resetRaw = is429 ? (resp.headers.get('x-ratelimit-reset-tokens') || '65') : '25';
+      const waitSecs = Math.ceil(parseFloat(resetRaw)) + 5;
+      const reason   = is429 ? 'rate limit' : 'over capacity';
+      const ld = document.getElementById('csv-loading');
+      for (let s = waitSecs; s > 0; s--) { if (ld) ld.textContent = '\u23f3 Groq ' + reason + ' — retrying in ' + s + 's... (' + (_retry+1) + '/2)'; await new Promise(r => setTimeout(r, 1000)); }
+      return groqVisionOCR(base64, mime, _retry + 1);
+    }
+    const data = await resp.json();
+    if (data.error) {
+      const msg = data.error.message || ('Groq error ' + (data.error.code || ''));
+      if (data.error.code === 401 || msg.toLowerCase().includes('auth') || msg.toLowerCase().includes('invalid api key')) throw new Error('Groq API key invalid — check in Settings');
+      throw new Error(msg);
+    }
+    let text = data.choices?.[0]?.message?.content || '';
+    if (!text.trim()) throw new Error('Empty response from Groq');
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    let jsonStr = text.trim();
+    const codeBlock = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/); if (codeBlock) jsonStr = codeBlock[1].trim();
+    const namesWrap = jsonStr.match(/\{[\s\S]*"names"\s*:\s*(\[[\s\S]*\])\s*\}/);
+    if (namesWrap) jsonStr = namesWrap[1].trim();
+    else {
+      const objWrap = jsonStr.match(/\{[\s\S]*"students"\s*:\s*(\[[\s\S]*\])\s*\}/);
+      if (objWrap) jsonStr = objWrap[1].trim();
+      else { const arrMatch = jsonStr.match(/(\[[\s\S]*\])/); if (arrMatch) jsonStr = arrMatch[1].trim(); }
+    }
+    let parsedObj;
+    try { parsedObj = JSON.parse(jsonStr); }
+    catch (parseErr) {
+      console.warn('JSON parse failed — prose fallback:', text.slice(0, 100));
+      const fb = (typeof extractNamesFromText === 'function') ? extractNamesFromText(text) : [];
+      const mapped = fb.map(name => { const p = name.trim().toUpperCase().split(/\s+/); return { surname:p[0]||'', firstname:p.slice(1).join(' ')||'', fullName:name.trim().toUpperCase() }; }).filter(s => s.fullName.length >= 3);
+      if (mapped.length > 0) { console.log('\u2705 Prose fallback: ' + mapped.length + ' names'); return mapped; }
+      throw new Error('Model returned unreadable text — try a clearer photo');
+    }
+    if (parsedObj && !Array.isArray(parsedObj) && parsedObj.detected_class) {
+      const dc = String(parsedObj.detected_class).trim().toUpperCase();
+      if (dc && dc !== 'NULL') _lastDetectedClass = dc;
+    }
+    const students = Array.isArray(parsedObj) ? parsedObj : (parsedObj.names || parsedObj.students || []);
+    const normalized = students.map(s => {
+      if (typeof s === 'string') { const p = s.trim().toUpperCase().split(/\s+/); return { surname:p[0]||'', firstname:p.slice(1).join(' ')||'', fullName:s.trim().toUpperCase() }; }
+      const sur = (s.surname||'').trim().toUpperCase(); const fst = (s.firstname||s.first_name||s.firstName||'').trim().toUpperCase();
+      const full = (s.fullName||s.full_name||'').trim().toUpperCase() || (sur+' '+fst).trim();
+      return { surname:sur, firstname:fst, fullName:full };
+    }).filter(s => s.fullName.length >= 2);
+    console.log('\u2705 Groq Vision OCR (' + GROQ_OCR_MODEL + '): ' + normalized.length + ' names');
+    return normalized;
+  } catch (e) { console.warn('Groq Vision OCR failed:', e.message); throw e; }
 }
 
-// ── Signboard OCR ──────────────────────────────────────────────────────────────
+// ── Signboard OCR — ported exactly from bloom-agent-v2 proven sandbox ────────
 
-// Trained on Nigerian school signboards: banners, painted walls, flex prints, weathered boards.
-// Handles: partial text, faded boards, abbreviations (JSS/SSS/LGA), hand-painted lettering.
-const SIGNBOARD_PROMPT = `You are reading a Nigerian private school signboard, banner, or gate sign photograph. The board may be simple or decorative, printed or hand-painted, clean or weathered, and may contain cartoon characters, student photos, or colourful graphics — ignore the graphics and focus only on the text.
+const SIGNBOARD_PROMPT = 'You are reading a Nigerian school signboard photograph. Extract: school name, full address, LGA, state.\nReturn ONLY valid JSON — no markdown, no explanation:\n{\"name\":\"SCHOOL NAME\",\"address\":\"full address\",\"lga\":\"LGA name\",\"state\":\"State name\"}\nUse empty string for anything unclear.';
 
-CRITICAL INSTRUCTION: Your ENTIRE response must be ONLY a single JSON object — nothing before the opening { and nothing after the closing }. No markdown. No explanation. No preamble. If you cannot read a field, use empty string "". Never refuse to respond — always return the JSON object even if some fields are empty.
-
-Extract these fields:
-- "name": The school's full official name as printed. It is ALWAYS the biggest text on the board regardless of colour — it may be dark red, dark blue, green, or any colour. Include the school type if part of the name (e.g. "Nursery & Primary School", "Comprehensive College", "Academy"). Examples: "Wisdomwalk Nursery & Primary School", "Future Promise Comprehensive College", "Olaroyals Schools", "Perfect Gold College".
-- "address": Full street address including area and city as written. Example: "Gbangba Market, Isale Abese, Abeokuta" or "3, Olori Oniru Street, Off Bola Ajibola Road, Asero, Abeokuta" or "5 Babs Street, More Junction, Abeokuta".
-- "lga": Local Government Area. Infer from the area name:
-  Asero / Bola Ajibola / Ikopa Titun / Madojutimi = "Abeokuta South"
-  Isale Abese / Gbangba Market / Oke Lantoro = "Abeokuta North"
-  More Junction / Onikolobo / Iberekodo = "Abeokuta South"
-  If Abeokuta but area unknown = "Abeokuta South"
-- "state": State only, no "State" suffix. Abeokuta = "Ogun". Lagos = "Lagos". Ibadan = "Oyo".
-- "phone": First phone number, 11 digits, no spaces (e.g. "07035026131"). Nigerian numbers start 07, 08, or 09.
-- "type": Comma list of school levels. Use: Creche, Nursery, Primary, Secondary, College. KG=Nursery, JSS/SSS=Secondary.
-
-Required output format (fill in the values):
-{"name":"","address":"","lga":"","state":"","phone":"","type":""}`;
-
-// Canvas-based image compression — reduces large phone photos before sending to Groq.
-// Keeps quality high enough for text recognition; max 900px on longest side.
-function _compressImageSimple(dataURL, maxPx) {
-  maxPx = maxPx || 900;
-  return new Promise(function(resolve) {
-    var img = new Image();
-    img.onload = function() {
-      try {
-        var w = img.naturalWidth  || img.width;
-        var h = img.naturalHeight || img.height;
-        var ratio = Math.min(1, maxPx / Math.max(w, h));
-        var cw = Math.round(w * ratio);
-        var ch = Math.round(h * ratio);
-        var canvas = document.createElement('canvas');
-        canvas.width  = cw;
-        canvas.height = ch;
-        var ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, cw, ch);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
-      } catch(e) {
-        resolve(dataURL); // fallback: send original if canvas fails
-      }
+function _compressImageSimple(dataURL, maxW) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
-    img.onerror = function() { resolve(dataURL); };
+    img.onerror = () => resolve(dataURL);
     img.src = dataURL;
   });
 }
 
-async function _callGroqSignboardVision(base64, mime) {
-  // NOTE: response_format:'json_object' and reasoning_format:'hidden' are NOT
-  // supported on Groq vision models — they cause "Failed to validate JSON".
-  // We rely on the prompt instructions and robust regex extraction instead.
-  const raw = await GroqRotator.vision(SIGNBOARD_PROMPT, base64, mime, {
-    max_tokens: 700, temperature: 0
-  });
+async function _callGroqSignboardVision(base64, mime, _retry) {
+  if (_retry === undefined) _retry = 0;
+  const controller = new AbortController();
+  const fetchTimer = setTimeout(() => controller.abort(), 45000);
+  let resp;
   try {
-    const text = (raw || '').replace(/```json|```/gi, '').trim();
-    // Extract the JSON object even if the model adds preamble or explanation
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) { console.warn('[signboard] No JSON found in response:', text.slice(0,200)); return {}; }
-    return JSON.parse(match[0]);
-  } catch(e) {
-    console.warn('[signboard] JSON parse failed:', (raw||'').slice(0,200));
-    return {};
+    resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST', signal: controller.signal,
+      headers: { 'Authorization': 'Bearer ' + getGroqKey(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: GROQ_OCR_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } },
+          { type: 'text', text: SIGNBOARD_PROMPT }
+        ]}],
+        temperature: 0, max_tokens: 500,
+        reasoning_format: 'hidden',
+        response_format: { type: 'json_object' }
+      })
+    });
+    clearTimeout(fetchTimer);
+  } catch (fetchErr) {
+    clearTimeout(fetchTimer);
+    if (_retry < 2) { await new Promise(r => setTimeout(r, 1500)); return _callGroqSignboardVision(base64, mime, _retry + 1); }
+    throw new Error(fetchErr.name === 'AbortError' ? 'Groq timed out' : fetchErr.message);
+  }
+  if (resp.status === 429 || resp.status === 503 || resp.status === 529) {
+    if (_retry >= 3) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq rate-limited'); }
+    let waitMs = parseFloat(resp.headers.get('retry-after') || '15') * 1000;
+    if (!waitMs || isNaN(waitMs)) waitMs = 15000;
+    waitMs = Math.min(Math.max(waitMs, 3000), 60000);
+    await new Promise(r => setTimeout(r, waitMs));
+    return _callGroqSignboardVision(base64, mime, _retry + 1);
+  }
+  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error((e.error && e.error.message) || 'Groq ' + resp.status); }
+  const data = await resp.json();
+  let text = data.choices?.[0]?.message?.content || '';
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  try { return JSON.parse(text); }
+  catch (e) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch (_) {} }
+    throw new Error('Could not read signboard clearly. Try again with better lighting.');
   }
 }
-
-
-// ── OCR Progress Display ──────────────────────────────────────────────────────
-// Injects an animated step-by-step panel inside the signboard card so the
-// agent can see exactly what the OCR is doing at every moment.
-
-function _ocrProgressShow() {
-  // Inject keyframe CSS once
-  if (!document.getElementById('ocr-prog-style')) {
-    var s = document.createElement('style');
-    s.id = 'ocr-prog-style';
-    s.textContent = [
-      '@keyframes ocr-spin{to{transform:rotate(360deg)}}',
-      '@keyframes ocr-pulse{0%,100%{opacity:.5}50%{opacity:1}}',
-      '.ocr-prog{margin-top:10px;padding:13px 14px;',
-        'background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.12));',
-        'border:1.5px solid rgba(124,58,237,0.45);border-radius:12px;}',
-      '.ocr-prog-hd{display:flex;align-items:center;gap:9px;',
-        'font-size:0.83rem;font-weight:800;color:#a78bfa;margin-bottom:11px;}',
-      '.ocr-spin{width:15px;height:15px;border-radius:50%;flex-shrink:0;',
-        'border:2.5px solid rgba(167,139,250,0.25);border-top-color:#a78bfa;',
-        'animation:ocr-spin .75s linear infinite;}',
-      '.ocr-st{display:flex;align-items:flex-start;gap:9px;padding:6px 0;',
-        'border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.78rem;}',
-      '.ocr-st:last-child{border-bottom:none;}',
-      '.ocr-st-ic{width:18px;text-align:center;flex-shrink:0;font-size:0.82rem;line-height:1.4;}',
-      '.ocr-st-tx{color:var(--sub,#94a3b8);line-height:1.4;}',
-      '.ocr-st.active .ocr-st-tx{color:#c4b5fd;animation:ocr-pulse 1.1s ease-in-out infinite;font-weight:600;}',
-      '.ocr-st.done   .ocr-st-tx{color:#34d399;font-weight:700;}',
-      '.ocr-st.error  .ocr-st-tx{color:#f87171;font-weight:700;}',
-    ].join('');
-    document.head.appendChild(s);
-  }
-
-  _ocrProgressHide(); // clear any previous panel first
-
-  var panel = document.createElement('div');
-  panel.id  = 'ocr-prog';
-  panel.className = 'ocr-prog';
-  panel.innerHTML = [
-    '<div class="ocr-prog-hd">',
-      '<span class="ocr-spin"></span>',
-      'AI Reading Signboard&hellip;',
-    '</div>',
-    '<div id="ocr-s1" class="ocr-st">',
-      '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Compressing image</span>',
-    '</div>',
-    '<div id="ocr-s2" class="ocr-st">',
-      '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Reading signboard with AI</span>',
-    '</div>',
-    '<div id="ocr-s3" class="ocr-st">',
-      '<span class="ocr-st-ic">&#9633;</span>',
-      '<span class="ocr-st-tx">Filling form fields</span>',
-    '</div>',
-  ].join('');
-
-  var card = document.getElementById('signboard-card');
-  if (card) card.appendChild(panel);
-}
-
-function _ocrProgressStep(id, state, text) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'ocr-st ' + (state || '');
-  var ic = el.querySelector('.ocr-st-ic');
-  var tx = el.querySelector('.ocr-st-tx');
-  if (ic) ic.textContent = state === 'done' ? '✅' : state === 'error' ? '❌' : '⏳';
-  if (tx && text) tx.textContent = text;
-}
-
-function _ocrProgressHide() {
-  var p = document.getElementById('ocr-prog');
-  if (p) p.remove();
-}
-// ── End OCR Progress Display ──────────────────────────────────────────────────
 
 async function scanSignboard(event) {
   const file = event.target.files[0]; if (!file) return;
   event.target.value = '';
-
-  // ── Show animated progress panel, hide button ─────────────────────────────
-  const scanBtn = document.querySelector('#signboard-card button');
-  const fb      = document.getElementById('signboard-scan-fb');
-  if (scanBtn) scanBtn.style.display = 'none';
-  if (fb)      fb.style.display = 'none';
-  _ocrProgressShow();
-
-  const done = (ok, msg) => {
-    // After a short pause, remove progress panel and restore button
-    setTimeout(() => {
-      _ocrProgressHide();
-      if (scanBtn) scanBtn.style.display = '';
-      if (fb) {
-        fb.style.display  = 'block';
-        fb.style.color    = ok ? '#34d399' : '#f87171';
-        fb.textContent    = msg;
-        setTimeout(() => { if (fb) { fb.style.display = 'none'; fb.style.color = ''; } }, 6000);
-      }
-    }, 1600);
-  };
-
-  if (!navigator.onLine) {
-    _ocrProgressStep('ocr-s1','error','No internet — connect and try again');
-    done(false, '❌ No internet connection');
-    return;
-  }
-
+  const fb = document.getElementById('signboard-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  if (!navigator.onLine) { show('\u274c No internet connection.'); return; }
+  if (!getGroqKey()) { show('\u274c Groq key not loaded yet — wait a moment and try again.'); return; }
+  show('\U0001f4f8 Reading signboard...');
   try {
-    // ── Step 1: Compress ─────────────────────────────────────────────────────
-    _ocrProgressStep('ocr-s1','active','Compressing image…');
-    const reader  = new FileReader();
-    const dataURL = await new Promise((res, rej) => {
-      reader.onload  = e => res(e.target.result);
-      reader.onerror = () => rej(new Error('Could not read image file'));
-      reader.readAsDataURL(file);
-    });
-    // 800px is the field-tested sweet spot — sufficient detail, fast transfer.
-    // Do NOT split into multiple crops: parallel Groq calls exhaust the rate-limit
-    // budget and cause ledger OCR to queue behind 20–60 s waits and fall to HuggingFace.
+    const reader = new FileReader();
+    const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
     const compressed = await _compressImageSimple(dataURL, 800);
     const base64 = compressed.split(',')[1];
-    _ocrProgressStep('ocr-s1','done','Image compressed ✓');
-
-    // ── Step 2: Single Groq vision call ──────────────────────────────────────
-    _ocrProgressStep('ocr-s2','active','Reading signboard with AI…');
     const result = await _callGroqSignboardVision(base64, 'image/jpeg');
-    const okRead = !!(result && (result.name || result.address));
-    _ocrProgressStep('ocr-s2', okRead ? 'done' : 'error',
-      okRead ? 'Signboard read ✓' : 'No text found — try a closer photo');
-
-    // ── Step 3: Fill form fields ──────────────────────────────────────────────
-    _ocrProgressStep('ocr-s3','active','Filling form fields…');
-    const filled = [];
-    if (result.name    && $('s-name'))    { $('s-name').value    = result.name;    filled.push('school name'); }
+    let filled = [];
+    if (result.name && $('s-name'))       { $('s-name').value = result.name; filled.push('name'); }
     if (result.address && $('s-address')) { $('s-address').value = result.address; filled.push('address'); }
-    if (result.lga     && $('s-lga'))     { $('s-lga').value     = result.lga;     filled.push('LGA'); }
-    if (result.state   && $('s-state'))   { $('s-state').value   = result.state;   filled.push('state'); }
-    if (result.phone   && $('s-phone'))   { $('s-phone').value   = result.phone;   filled.push('phone'); }
-
+    if (result.lga && $('s-lga'))         { $('s-lga').value = result.lga; filled.push('LGA'); }
+    if (result.state && $('s-state'))     { $('s-state').value = result.state; filled.push('state'); }
     if (filled.length) {
-      _ocrProgressStep('ocr-s3','done','Filled: ' + filled.join(', ') + ' ✓');
-      done(true, '✅ ' + filled.join(', ') + ' — verify before submitting');
+      show('\u2705 Filled ' + filled.join(', ') + ' — please verify before submitting.');
     } else {
-      _ocrProgressStep('ocr-s3','error','No data extracted — try a closer photo');
-      done(false, '⚠️ Signboard not readable — try a closer, well-lit photo');
+      show('\u26a0\ufe0f Could not read the signboard clearly — please fill in manually.');
     }
-  } catch(e) {
-    _ocrProgressStep('ocr-s3','error', e.message || 'Scan failed');
-    done(false, '❌ ' + (e.message || 'Scan failed — try again'));
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+  } catch (e) {
+    show('\u274c ' + (e.message || 'Could not read signboard. Try a clearer photo.'));
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // ── Ledger UI helpers (needed by V2 multi-page pipeline) ─────────────────
 function fileToDataUrl(file){
   return new Promise((resolve,reject)=>{
