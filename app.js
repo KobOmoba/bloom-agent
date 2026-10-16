@@ -460,7 +460,7 @@ const GroqRotator = (() => {
     throw new Error('All Groq API keys are currently rate-limited. Please wait a moment and try again.');
   }
 
-  const _model = () => (typeof GROQ_OCR_MODEL !== 'undefined' ? GROQ_OCR_MODEL : 'qwen/qwen3.6-27b');
+  const _model = () => (typeof GROQ_OCR_MODEL !== 'undefined' ? GROQ_OCR_MODEL : 'qwen/qwen3.8-27b');
 
   return {
     // Force a fresh key reload from Firestore
@@ -1472,7 +1472,7 @@ async function runFollowupAI() {
     if (el) el.textContent = text;
   } catch (e) { if (el) el.textContent = '❌ ' + e.message; }
 }
-const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
+const GROQ_OCR_MODEL = 'qwen/qwen3.8-27b'; // llama-4-scout deprecated June 17 2026
 let _groqRateLimitedThisSession = false; // once Groq hits an org-wide rate limit, skip it for remaining pages this scan
 
 const GROQ_OCR_PROMPT = `You are reading a Nigerian school attendance/fee register photo.
