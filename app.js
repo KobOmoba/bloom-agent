@@ -38,7 +38,15 @@ const SQ = {
     const items=[...this.q];
     for(const item of items){
       try{ await this.exec(item.op); this.q=this.q.filter(x=>x.id!==item.id); }
-      catch(e){ item.tries++; if(item.tries>3) this.q=this.q.filter(x=>x.id!==item.id); }
+      catch(e){
+        const _em = e?.message || '';
+        const _isPerm = _em.includes('PERMISSION_DENIED') || _em.toLowerCase().includes('permission');
+        item.tries = (item.tries || 0) + 1;
+        // Don't silently drop permission-blocked deals — keep them visible so agent
+        // knows to contact Bayo. Drop only transient network failures after 5 tries.
+        if (item.tries > 5 && !_isPerm) this.q = this.q.filter(x => x.id !== item.id);
+        if (_isPerm) console.warn('Deal blocked by Firestore rules — kept in queue:', _em.slice(0,80));
+      }
     }
     this.save(); this.ping();
   },
@@ -659,7 +667,7 @@ function updateCommission(){
 async function realOnline() {
   if (!navigator.onLine) return false;
   try {
-    await fetch('https://firestore.googleapis.com/', { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(3000) });
+    await fetch('https://firestore.googleapis.com/', { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(8000) });
     return true;
   } catch { return false; }
 }
@@ -705,16 +713,17 @@ async function submitDeal(){
   try{
     const online = await realOnline();
     if(db && online){
-      // Dedup check: block identical pending deal within 30 seconds
-      const recent = await db.collection('admin_deals')
-        .where('school.name','==',name)
-        .where('school.phone','==',phone)
-        .where('status','==','pending')
-        .orderBy('timestamp','desc').limit(1).get();
-      const thirtySecsAgo = new Date(Date.now() - 30000);
-      const isDup = !recent.empty && recent.docs[0].data().timestamp?.toDate?.() > thirtySecsAgo;
-      if(isDup){ showFB(fb,'bad','⚠️ This school was just submitted. Please wait before re-submitting.'); btn.textContent='🚀 Submit Deal'; btn.disabled=false; window._dealSubmitting=false; return; }
+      // Dedup: localStorage-based (30s window) — avoids composite-index Firestore query
+      // that was causing "saved offline" when the index didn't exist.
+      const _dedupKey = 'ag_last_submit';
+      const _last = JSON.parse(localStorage.getItem(_dedupKey) || '{}');
+      const _thirtyAgo = Date.now() - 30000;
+      if (_last.phone === phone && _last.name === name && _last.time > _thirtyAgo) {
+        showFB(fb,'bad','⚠️ This school was just submitted. Wait 30 seconds before re-submitting.');
+        btn.textContent='📤 Submit to Bayo'; btn.disabled=false; window._dealSubmitting=false; return;
+      }
       await db.collection('admin_deals').add(deal);
+      localStorage.setItem(_dedupKey, JSON.stringify({ phone, name, time: Date.now() }));
     }
     else{ SQ.push({t:'deal',d:deal}); }
     window._dealSubmitting=false; showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(AGENT_COMM)} on approval.`);
