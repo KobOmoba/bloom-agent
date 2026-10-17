@@ -1157,6 +1157,23 @@ function openOcrReviewModal(parsedNames, detectedClass) {
     const nm = typeof p === 'string' ? p : (p.name || '');
     return { name: nm.trim().toUpperCase(), cls: dc, sel: true };
   }).filter(r => r.name.length > 1);
+  // ── Auto-dedup: same student from admission register + class register ────
+  // Uses word-sort key so "SURNAME FIRSTNAME S" and "SURNAME FIRSTNAME" match.
+  const _revSeen = new Set();
+  const _removedCount = _ocrReviewData.length;
+  _ocrReviewData = _ocrReviewData.filter(r => {
+    const ws = r.name.split(/\s+/).filter(w => /^[A-Z]{3,}/.test(w));
+    const k  = ws.length >= 2 ? [...ws].sort().slice(0, 3).join('') : r.name.replace(/[^A-Z]/g, '');
+    if (_revSeen.has(k)) return false;
+    _revSeen.add(k); return true;
+  });
+  // Sort alphabetically — remaining near-duplicates appear side-by-side for easy review
+  _ocrReviewData.sort((a, b) => a.name.localeCompare(b.name));
+  const _dupCount = _removedCount - _ocrReviewData.length;
+  if (_dupCount > 0) {
+    const dupNote = document.getElementById('ocr-dup-note');
+    if (dupNote) { dupNote.textContent = '🔁 ' + _dupCount + ' duplicate' + (_dupCount!==1?'s':'') + ' removed automatically.'; dupNote.style.display='block'; }
+  }
   _renderOcrReviewList();
   // Pre-fill the bulk class dropdown too
   const bulkSel = document.getElementById('ocr-class-all');
@@ -3291,7 +3308,11 @@ async function processImagesSequentially(files) {
     // Each entry is {surname, firstname, fullName} — deduplicate across pages
     pageNames.forEach(n => {
       const full = (n.fullName || (n.surname + ' ' + n.firstname)).trim().toUpperCase();
-      const key  = full.replace(/[^A-Z]/g, ''); // letters-only key for fuzzy dedup
+      // Word-sort key: sort significant words (3+ letters) so that name-order variations
+      // and middle initials ("OLIYIDE BIGGOLD S" vs "OLIYIDE BIGGOLD") are treated as
+      // the same student — the main cause of double-counting across register types.
+      const _ws3 = full.split(/\s+/).filter(w => /^[A-Z]{3,}/.test(w));
+      const key  = _ws3.length >= 2 ? [..._ws3].sort().slice(0, 3).join('') : full.replace(/[^A-Z]/g, '');
       if (full.length >= 2 && !_seen.has(key)) { _seen.add(key); allNames.push(full); }
     });
   }
