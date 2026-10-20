@@ -93,8 +93,25 @@ function normalizePhone(raw){
   return p;
 }
 
+// ── Secure login (Oct 2026): phone + 6-digit PIN, checked by Firebase ──────
+// Each agent's login is agent-<phone>@agents.edubloom.com.ng, created by Bayo's portal.
+function _agentAuthEmail(phone){ return 'agent-'+normalizePhone(String(phone||''))+'@agents.edubloom.com.ng'; }
+function _authReady(){
+  return new Promise(res=>{
+    try{ const un=firebase.auth().onAuthStateChanged(u=>{ un(); res(u); }); setTimeout(()=>res(firebase.auth().currentUser),6000); }
+    catch(e){ res(null); }
+  });
+}
+function _blockedMsg(a){
+  const r = a.deactivationReason || 'deactivated';
+  return r === 'fraud'
+    ? '🚨 Your account has been suspended. Contact AariNAT: +234 814 507 3941'
+    : '🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941';
+}
+
 async function doLogin(){
   const raw = $('l-phone').value.trim();
+  const pin = ($('l-pin')?.value || '').trim();
   const phone = normalizePhone(raw);
   const localFmt = phone.startsWith('234') ? '0' + phone.slice(3) : phone;
 
@@ -104,89 +121,61 @@ async function doLogin(){
   }
   const btn=$('l-btn'); btn.textContent='Checking...'; btn.disabled=true;
   $('login-err').style.display='none';
+  const done=()=>{ btn.textContent='▶ Login'; btn.disabled=false; };
 
-  // ✅ Step 1: check localStorage cache first — works offline after first login
+  // ✅ Step 1: this phone is already signed in as this agent — works offline, no PIN needed
   const cached = localStorage.getItem('ag_agent');
   if(cached){
     try{
       const cachedAgent = JSON.parse(cached);
       const cachedPhone = normalizePhone(cachedAgent.phone || '');
-      if(cachedPhone === phone || cachedAgent.phone === localFmt || cachedPhone === localFmt){
-        // Access gate — check cached active status
-        if(cachedAgent.active === false){
-          localStorage.removeItem('ag_agent');
-          const r = cachedAgent.deactivationReason || 'deactivated';
-          const msg = r === 'fraud'
-            ? '🚨 Your account has been suspended. Contact AariNAT: +234 814 507 3941'
-            : '🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941';
-          showErr(msg);
-          btn.textContent='▶ Login'; btn.disabled=false;
-          return;
-        }
+      const samePhone = cachedPhone === phone || cachedAgent.phone === localFmt || cachedPhone === localFmt;
+      const u = samePhone ? await _authReady() : null;
+      if(samePhone && u && (u.email||'').toLowerCase() === _agentAuthEmail(cachedPhone)){
+        if(cachedAgent.active === false){ localStorage.removeItem('ag_agent'); showErr(_blockedMsg(cachedAgent)); return done(); }
         agent = cachedAgent;
-        // Silently refresh from Firestore in background — will force logout if deactivated
-        if(navigator.onLine && db){
-          refreshAgentBackground(cachedAgent.id, phone, localFmt).catch(()=>{});
-        }
-        startApp();
-        btn.textContent='▶ Login'; btn.disabled=false;
-        return;
+        if(navigator.onLine && db) refreshAgentBackground(cachedAgent.id, phone, localFmt).catch(()=>{});
+        startApp(); return done();
       }
     }catch(e){ localStorage.removeItem('ag_agent'); }
   }
 
-  // ✅ Step 2: first-time login — needs internet to find agent record in Firestore
+  // ✅ Step 2: PIN login — needs internet the first time
+  if(!/^\d{6}$/.test(pin)){
+    showErr('Enter your 6-digit PIN. Bayo sends it to you on WhatsApp. No PIN yet? Call +234 814 507 3941');
+    return done();
+  }
   if(!navigator.onLine || !db){
     showErr('First login needs internet. Connect once — after that you can work offline anytime.');
-    btn.textContent='▶ Login'; btn.disabled=false;
-    return;
+    return done();
   }
-
   try {
-    // Search both formats — admin may have saved with or without country code
+    await firebase.auth().signInWithEmailAndPassword(_agentAuthEmail(phone), pin);
     const [snap1, snap2] = await Promise.all([
       db.collection('admin_agents').where('phone','==',phone).get(),
       db.collection('admin_agents').where('phone','==',localFmt).get()
     ]);
-    // Deduplicate by document ID
-    const seen = new Set();
-    const allDocs = [...snap1.docs, ...snap2.docs].filter(d=>{
-      if(seen.has(d.id)) return false; seen.add(d.id); return true;
-    });
-
-    if(!allDocs.length){
-      showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 814 507 3941');
-      btn.textContent='▶ Login'; btn.disabled=false; return;
-    }
-    const doc = allDocs[0];
+    const doc = [...snap1.docs, ...snap2.docs][0];
+    if(!doc){ await firebase.auth().signOut(); showErr('Number not registered. Ask Bayo (AariNAT) to add you: +234 814 507 3941'); return done(); }
     agent = { id:doc.id, ...doc.data() };
-
-    // ── Access gate: block deactivated agents ──────────────────────────────
-    if(agent.active === false){
-      const r = agent.deactivationReason || 'deactivated';
-      const msg = r === 'fraud'
-        ? '🚨 Your account has been suspended due to a fraud report. Contact AariNAT: +234 814 507 3941'
-        : r === 'dismissed'
-        ? '🚫 Your agent account has been deactivated. Contact Bayo: +234 814 507 3941'
-        : '🚫 Your agent account is no longer active. Contact Bayo: +234 814 507 3941';
-      showErr(msg);
-      btn.textContent='▶ Login'; btn.disabled=false; return;
-    }
-
+    if(agent.active === false){ await firebase.auth().signOut(); showErr(_blockedMsg(agent)); return done(); }
     localStorage.setItem('ag_agent', JSON.stringify(agent));
+    if($('l-pin')) $('l-pin').value='';
     startApp();
   } catch(e){
-    const msg = e?.message||'';
-    if(msg.toLowerCase().includes('permission') || msg.includes('PERMISSION_DENIED')){
-      showErr('Firebase permission error. Ask Bayo to fix the Firestore Rules: +234 814 507 3941');
-    } else if(!navigator.onLine){
+    const c = e?.code || '';
+    if(c==='auth/user-not-found'||c==='auth/invalid-credential'||c==='auth/invalid-login-credentials'||c==='auth/wrong-password'){
+      showErr('Phone number or PIN is wrong. Forgot your PIN? Ask Bayo for a new one: +234 814 507 3941');
+    } else if(c==='auth/too-many-requests'){
+      showErr('Too many wrong attempts. Wait a few minutes, then try again.');
+    } else if(c==='auth/network-request-failed' || !navigator.onLine){
       showErr('No internet. First login needs a connection — offline works after that.');
     } else {
-      showErr('Failed: ' + (msg.slice(0,100)||'unknown error'));
+      showErr('Failed: ' + ((e?.message||'').slice(0,100)||'unknown error'));
     }
     console.error('Login error:', e);
   }
-  btn.textContent='▶ Login'; btn.disabled=false;
+  done();
 }
 
 // Silently refresh cached agent profile from Firestore in background
@@ -208,6 +197,7 @@ async function refreshAgentBackground(agentId, phone, localFmt){
     if(fresh.active === false){
       localStorage.removeItem('ag_agent');
       agent = null;
+      try{ firebase.auth().signOut(); }catch(_){}
       const r = fresh.deactivationReason || 'deactivated';
       const msg = r === 'fraud'
         ? '🚨 Your account has been suspended. Contact AariNAT: +234 814 507 3941'
@@ -561,7 +551,7 @@ function _initLedgerUI(){
   addLedgerPage();
 }
 
-function logout(){ if(!confirm('Logout?'))return; localStorage.removeItem('ag_agent'); location.reload(); }
+function logout(){ if(!confirm('Logout?'))return; localStorage.removeItem('ag_agent'); try{ firebase.auth().signOut().finally(()=>location.reload()); }catch(e){ location.reload(); } }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function go(tab){
