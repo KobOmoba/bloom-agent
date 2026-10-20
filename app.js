@@ -50,7 +50,21 @@ const SQ = {
     }
     this.save(); this.ping();
   },
-  async exec(op){ if(op.t==='deal') await db.collection('admin_deals').add(op.d); }
+  // Deals are written in two parts: the deal itself (public-readable so agents
+  // see My Deals) and the scanned student names/finances in admin_deal_students
+  // (only Bayo can read — children's data, NDPA 2023). op.dealDone makes retries safe.
+  async exec(op){
+    if(op.t!=='deal') return;
+    if(op.d && (op.d.scannedStudents || op.d.ledgerFinancial)){   // old-format queue item
+      op.s = { names: op.d.scannedStudents||[], ledgerFinancial: op.d.ledgerFinancial||null };
+      delete op.d.scannedStudents; delete op.d.ledgerFinancial;
+    }
+    if(!op.id) op.id = db.collection('admin_deals').doc().id;
+    if(!op.dealDone){ await db.collection('admin_deals').doc(op.id).set(op.d); op.dealDone = true; this.save(); }
+    if(op.s && ((op.s.names||[]).length || op.s.ledgerFinancial)){
+      await db.collection('admin_deal_students').doc(op.id).set({ ...op.s, dealId: op.id, schoolName: op.d?.school?.name||'', createdAt: new Date() });
+    }
+  }
 };
 window.addEventListener('online', ()=>{ SQ.ping(); SQ.run(); });
 window.addEventListener('offline', ()=>SQ.ping());
@@ -700,14 +714,20 @@ async function submitDeal(){
     tier:{ name:'Premium', price:FLAT_PRICE },
     terms, notes,
     // AI-scanned student names — used by onboarding agent to pre-load school
-    scannedStudents: csvParsedNames.length ? csvParsedNames : [],
     scannedCount: csvParsedNames.length || 0,
     // NEW: financial ledger data (balance/fees/payment status per student),
     // only present if the agent ran the separate Financial Ledger Scan.
     // Keeps the existing scannedStudents/scannedCount fields exactly as
     // they were — this is purely additive.
-    ledgerFinancial: (ledgerFinancialData && ledgerFinancialData.students.length) ? ledgerFinancialData : null,
     onboardingStatus: 'awaiting_principal'
+  };
+  // Sensitive scan data goes to a Bayo-only collection, linked by deal ID
+  const dealOp = {
+    t:'deal',
+    id: db ? db.collection('admin_deals').doc().id : (Date.now().toString(36)+Math.random().toString(36).slice(2)),
+    d: deal,
+    s: { names: csvParsedNames.length ? csvParsedNames : [],
+         ledgerFinancial: (ledgerFinancialData && ledgerFinancialData.students.length) ? ledgerFinancialData : null }
   };
 
   try{
@@ -722,10 +742,10 @@ async function submitDeal(){
         showFB(fb,'bad','⚠️ This school was just submitted. Wait 30 seconds before re-submitting.');
         btn.textContent='📤 Submit to Bayo'; btn.disabled=false; window._dealSubmitting=false; return;
       }
-      await db.collection('admin_deals').add(deal);
+      await SQ.exec(dealOp);
       localStorage.setItem(_dedupKey, JSON.stringify({ phone, name, time: Date.now() }));
     }
-    else{ SQ.push({t:'deal',d:deal}); }
+    else{ SQ.push(dealOp); }
     window._dealSubmitting=false; showFB(fb,'ok',`✅ "${name}" submitted! ${online?'Bayo will see it shortly.':'Saved offline — will reach Bayo when internet returns.'} Your commission will be ${fmt(AGENT_COMM)} on approval.`);
     pipelineReset();
     // ✅ Command center stays in control — no direct principal contact from agent app.
@@ -740,8 +760,8 @@ async function submitDeal(){
     ledgerFinancialData = null;
     const ledgerSummaryEl = $('ledger-financial-summary'); if (ledgerSummaryEl) ledgerSummaryEl.style.display = 'none';
   }catch(e){
-    // Write failed — queue it so the deal is never lost
-    SQ.push({t:'deal',d:deal});
+    // Write failed — queue it so the deal is never lost (dealDone flag prevents a duplicate)
+    SQ.push(dealOp);
     const errMsg = e?.message || '';
     const isPermission = errMsg.toLowerCase().includes('permission') || errMsg.includes('PERMISSION_DENIED');
     if (isPermission) {
