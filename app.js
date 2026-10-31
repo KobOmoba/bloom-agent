@@ -1648,8 +1648,33 @@ async function ocrSpaceOCR(base64, mime) {
   }
 }
 
+
+// ── EduBloom OCR reader (Cloudflare Worker, Gemini first, keys hidden) ──
+const EDUBLOOM_OCR_URL = 'https://edubloom-ocr.aarinat-company-limited.workers.dev';
+async function edubloomOCR(route, base64, mime){
+  const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), 90000);
+  try{
+    const r = await fetch(EDUBLOOM_OCR_URL + '/' + route, { method:'POST', signal:ctl.signal,
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({ image: base64, mime: mime||'image/jpeg' }) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error || ('OCR reader ' + r.status));
+    console.log('✅ EduBloom OCR (' + (d.engine||'?') + ')');
+    return d;
+  } finally { clearTimeout(t); }
+}
+function _mapOcrNames(list){
+  return (list||[]).map(n=>{
+    const sur=String(n.surname||'').trim().toUpperCase(), fst=String(n.firstname||'').trim().toUpperCase();
+    return { surname:sur, firstname:fst, fullName:(sur+' '+fst).trim() };
+  }).filter(s=>s.fullName.length>=2);
+}
+
 async function groqVisionOCR(base64, mime, _retry) {
   if (_retry === undefined) _retry = 0;
+  if (_retry === 0) {
+    try { const d = await edubloomOCR('names', base64, mime); const m = _mapOcrNames(d.names); if (m.length) return m; }
+    catch (e) { console.warn('EduBloom OCR failed, using Groq:', e.message); }
+  }
   const apiKey = getGroqKey();
   if (!apiKey) throw new Error('No Groq API key');
   const controller = new AbortController();
@@ -1816,14 +1841,21 @@ async function scanSignboard(event) {
   const fb = document.getElementById('signboard-scan-fb');
   const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
   if (!navigator.onLine) { show('\u274c No internet connection.'); return; }
-  if (!getGroqKey()) { show('\u274c Groq key not loaded yet — wait a moment and try again.'); return; }
   show('\U0001f4f8 Reading signboard...');
   try {
     const reader = new FileReader();
     const dataURL = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(file); });
     const compressed = await _compressImageSimple(dataURL, 800);
     const base64 = compressed.split(',')[1];
-    const result = await _callGroqSignboardVision(base64, 'image/jpeg');
+    const prev = document.getElementById('signboard-preview');
+    if (prev) { prev.src = compressed; prev.style.display = 'block'; }
+    let result;
+    try { result = await edubloomOCR('signboard', base64, 'image/jpeg'); }
+    catch (e) { console.warn('EduBloom OCR signboard failed, using Groq:', e.message); result = await _callGroqSignboardVision(base64, 'image/jpeg'); }
+    if (result.phone && $('s-phone') && !$('s-phone').value) {
+      const first = String(result.phone).split(',')[0].replace(/\D/g,'');
+      if (first) { $('s-phone').value = first.startsWith('0') ? '234' + first.slice(1) : first; }
+    }
     let filled = [];
     if (result.name && $('s-name'))       { $('s-name').value = result.name; filled.push('name'); }
     if (result.address && $('s-address')) { $('s-address').value = result.address; filled.push('address'); }
