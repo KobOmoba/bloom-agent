@@ -1659,6 +1659,7 @@ async function edubloomOCR(route, base64, mime){
     const d = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error || ('OCR reader ' + r.status));
     console.log('✅ EduBloom OCR (' + (d.engine||'?') + ')');
+    window._lastOcrEngine = /gemini/i.test(d.engine||'') ? 'Gemini' : (d.engine||'AI reader');
     return d;
   } finally { clearTimeout(t); }
 }
@@ -1673,7 +1674,7 @@ async function groqVisionOCR(base64, mime, _retry) {
   if (_retry === undefined) _retry = 0;
   if (_retry === 0) {
     try { const d = await edubloomOCR('names', base64, mime); const m = _mapOcrNames(d.names); if (m.length) return m; }
-    catch (e) { console.warn('EduBloom OCR failed, using Groq:', e.message); }
+    catch (e) { console.warn('EduBloom OCR failed, using Groq:', e.message); window._lastOcrEngine = 'Groq (backup)'; }
   }
   const apiKey = getGroqKey();
   if (!apiKey) throw new Error('No Groq API key');
@@ -3041,7 +3042,7 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       const canTryGroq = !!groqKey && !skipGroq;
 
       ocrOverlayStep('load', canTryGroq
-        ? 'Image loaded — sending to Groq Vision...'
+        ? 'Image loaded — sending to AI reader...'
         : '🤗 Groq unavailable — preparing HuggingFace (page ' + pageNum + ')...', 20);
 
       // Retry loading keys once if the proxy hadn't finished/succeeded yet
@@ -3052,10 +3053,10 @@ async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
       // No hard-stop when Groq key is missing — always cascade to HF, then OCR.space.
       if (canTryGroq) {
         try {
-          ocrOverlayStep('upload', 'Groq Vision scanning (page ' + pageNum + '/' + total + ')...', 50);
+          ocrOverlayStep('upload', 'AI reader scanning (page ' + pageNum + '/' + total + ')...', 50);
           const names = await groqVisionOCR(b64, mime);
           if (names && names.length) {
-            ocrOverlayStep('done', '✅ ' + names.length + ' names found (page ' + pageNum + ')', 100);
+            ocrOverlayStep('done', '✅ ' + names.length + ' names found (page ' + pageNum + ') · ' + (window._lastOcrEngine || 'Groq'), 100);
             resolve(names); return;
           }
           _lastOcrError = 'Groq returned 0 names'; // fall through to HF
