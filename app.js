@@ -966,14 +966,14 @@ function renderCountResult(names) {
   // Update all count display elements (pipeline + legacy)
   ['csv-student-count'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=csvStudentCount; });
   ['csv-tier-name'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=tier.name; });
-  ['csv-school-pays'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='\u20a6'+tier.price.toLocaleString('en-NG')+'/term'; });
+  ['csv-school-pays'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='\u20a6'+tier.price.toLocaleString('en-NG'); });
   ['csv-your-comm'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='\u20a6'+comm.toLocaleString('en-NG'); });
 
   const preview = unique.slice(0, 12);
   const extra   = unique.length - preview.length;
   const previewHTML =
     '<strong style="display:block;margin-bottom:4px;color:white;font-size:0.73rem;">✅ ' + unique.length + ' names found — sample:</strong>' +
-    preview.map(n => '<span style="display:inline-block;background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 6px;margin:2px;font-size:0.7rem;color:#e2e8f0;">' + esc(n) + '</span>').join('') +
+    preview.map(n => '<span style="display:inline-block;background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 6px;margin:2px;font-size:0.7rem;color:#e2e8f0;">' + esc(n) + '</span>').join(', ') +
     (extra > 0 ? '<div style="font-size:0.7rem;color:var(--sub);margin-top:3px;">...and ' + extra + ' more</div>' : '');
 
   ['csv-name-preview'].forEach(id => { const e=document.getElementById(id); if(e) e.innerHTML=previewHTML; });
@@ -1284,7 +1284,7 @@ function ocrConfirmImport() {
   const qe = id => document.getElementById(id);
   if (qe('csv-student-count')) qe('csv-student-count').textContent = csvStudentCount;
   if (qe('csv-tier-name'))     qe('csv-tier-name').textContent     = tier.name;
-  if (qe('csv-school-pays'))   qe('csv-school-pays').textContent   = '\u20a6' + tier.price.toLocaleString('en-NG') + '/term';
+  if (qe('csv-school-pays'))   qe('csv-school-pays').textContent   = '\u20a6' + tier.price.toLocaleString('en-NG');
   if (qe('csv-your-comm'))     qe('csv-your-comm').textContent     = '\u20a6' + comm.toLocaleString('en-NG');
   closeM('ocr-review-modal');
   _proceedToStep3();
@@ -3014,6 +3014,25 @@ function resizeImageForOCR(dataURL) {
   });
 }
 
+// Merge exact + near-duplicate names across pages (share a word, full name off by <=2 letters).
+function _lev(a, b) {
+  const d = Array.from({length: a.length + 1}, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function _dedupeNames(names) {
+  const out = [];
+  names.forEach(n => {
+    const k = n.toUpperCase().replace(/[^A-Z ]/g, '').replace(/\s+/g, ' ').trim();
+    const w = k.split(' ');
+    const dup = out.some(o => o.k === k || (k.length > 5 && o.k.split(' ').some(x => x.length > 2 && w.includes(x)) && _lev(o.k, k) <= 2));
+    if (!dup) out.push({ n, k });
+  });
+  return out.map(o => o.n);
+}
+
 async function _readOnePage(file, pageNum, total, fbEl, skipGroq) {
   return new Promise(resolve => {
     const reader = new FileReader();
@@ -3369,6 +3388,7 @@ async function processImagesSequentially(files) {
     });
   }
   ocrOverlayHide(800);
+  { const _d = _dedupeNames(allNames); allNames.length = 0; allNames.push(..._d); }
   if (allNames.length) {
     renderCountResult(allNames);
   } else {
