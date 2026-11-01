@@ -2855,8 +2855,26 @@ function ocrOverlayHide(delayMs) {
 // Groq Vision has a hard 4MB base64 limit; full-res camera shots easily exceed it.
 // This resizes to ≤1600px wide at 85% JPEG quality — typically 200-500KB result.
 // ── OpenCV.js loader (lazy-loaded on first OCR scan) ──────────────────────
-let _cvReady = false, _cvLoading = false;
+let _cvReady = false, _cvLoading = false, _cvPromise = null;
+// Cached loader with a 15s timeout; on failure the cache is reset so a later scan can retry
+// (and the current scan carries on without OpenCV cleanup).
 function loadOpenCV() {
+  if (_cvReady) return Promise.resolve(true);
+  if (_cvPromise) return _cvPromise;
+  _cvPromise = Promise.race([
+    _loadOpenCVOnce(),
+    new Promise(r => setTimeout(() => r(false), 15000))
+  ]).then(ok => {
+    if (!ok) {
+      _cvPromise = null; _cvLoading = false;
+      const old = document.getElementById('opencv-js');
+      if (old && !(window.cv && window.cv.Mat)) old.remove();
+    }
+    return ok;
+  });
+  return _cvPromise;
+}
+function _loadOpenCVOnce() {
   return new Promise(resolve => {
     if (_cvReady) return resolve(true);
     if (_cvLoading) { const wait = setInterval(() => { if (_cvReady) { clearInterval(wait); resolve(true); } }, 200); return; }
